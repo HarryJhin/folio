@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Suspense, lazy, useMemo } from 'react';
+import { Fragment, Suspense, lazy, useMemo } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { PUBLIC_SITE_PATH_PREFIX } from '@shared/contracts';
 import { ToastProvider } from './ui/Toast';
 import { SettingsProvider } from './settings';
 import { AuthProvider } from './auth/AuthProvider';
+import { useAssistantEnabled } from './assistant/availability';
 import { AssistantHost } from './assistant/AssistantHost';
 import { CompareProvider } from './compare/CompareProvider';
 import { ComparePage } from './compare/ComparePage';
@@ -106,7 +107,6 @@ export function App() {
  * with useLocation and mounting exactly one tree sidesteps both.
  */
 function AppRoutes() {
-  const { t } = useTranslation('app');
   const location = useLocation();
   // Set by the server in index.html when this host is a published space's own subdomain / custom domain.
   const hostSiteSlug = useMemo(() => readHostSiteSlug(), []);
@@ -140,7 +140,17 @@ function AppRoutes() {
 
   return (
     <AuthProvider>
-      <AssistantHost>
+      <AuthenticatedRoutes />
+    </AuthProvider>
+  );
+}
+
+function AuthenticatedRoutes() {
+  const { t } = useTranslation('app');
+  const assistantEnabled = useAssistantEnabled();
+  const Host = assistantEnabled ? AssistantHost : Fragment;
+  return (
+    <Host>
       {/* Round 31: the `/events` socket and the notification feed are also
           "once, above the route tree", for the same reason as AssistantHost:
           moving between pages must not reopen the connection. Draws nothing. */}
@@ -177,7 +187,7 @@ function AppRoutes() {
           />
         </Route>
         <Route path="/admin/access" element={<AccessAdmin />} />
-        <Route path="/admin/assistant" element={<AssistantAnalytics />} />
+        {assistantEnabled && <Route path="/admin/assistant" element={<AssistantAnalytics />} />}
         <Route path="/admin/integrations" element={<ChatIntegrationsAdmin />} />
         <Route path="/admin/audit" element={<AuditLogAdmin />} />
         {/* Single sign-on providers (OpenID Connect), docs/AUTH.md. */}
@@ -198,7 +208,6 @@ function AppRoutes() {
         <Route path="*" element={<NotFound message={t('routes.notFound.generic')} />} />
       </Routes>
       </CompareProvider>
-      </AssistantHost>
-    </AuthProvider>
+    </Host>
   );
 }

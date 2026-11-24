@@ -25,6 +25,7 @@ import {
 } from '../shared/contracts.js';
 import { restrictionChainSql } from './access/roleSql.js';
 import { isAgentPath } from './agentPath.js';
+import { assistantDisabled } from './assistant/providerFlags.js';
 import { query, queryOne } from './db/pool.js';
 import { isDemoMode } from './demo.js';
 import { badRequest, conflict, notFound } from './errors.js';
@@ -69,7 +70,7 @@ function toPublicSpace(row: PublicSpaceRow): PublicSpace {
     slug: row.slug,
     name: row.name,
     allowDownload: row.public_allow_download,
-    allowAssistant: row.public_allow_assistant,
+    allowAssistant: !assistantDisabled() && row.public_allow_assistant,
     subdomain: row.public_subdomain,
     domain: row.public_domain,
     indexing: row.public_indexing !== false,
@@ -391,8 +392,11 @@ export type SpacePublicSettingsInput = Omit<SpacePublicSettings, 'indexing' | 'p
 export async function setSpacePublicSettings(slug: string, input: SpacePublicSettingsInput, originFallback = ''): Promise<SpacePublishState> {
   const current = await getSpacePublicSettings(slug);
   if (!current) throw notFound('space');
+  // Preserve the stored per-space choice when an operator disables the assistant instance-wide.
+  const allowAssistant = assistantDisabled() ? null : input.allowAssistant;
   const settings: SpacePublicSettings = {
     ...input,
+    allowAssistant: allowAssistant ?? false,
     indexing: input.indexing ?? current.settings.indexing,
     primaryHost: input.primaryHost ?? current.settings.primaryHost,
   };
@@ -416,10 +420,10 @@ export async function setSpacePublicSettings(slug: string, input: SpacePublicSet
   try {
     await query(
       `UPDATE spaces
-          SET public_subdomain = $2, public_domain = $3, public_allow_download = $4, public_allow_assistant = $5,
+          SET public_subdomain = $2, public_domain = $3, public_allow_download = $4, public_allow_assistant = COALESCE($5, public_allow_assistant),
               public_indexing = $6, public_primary_host = $7
         WHERE slug = $1`,
-      [slug, settings.subdomain, settings.domain, settings.allowDownload, settings.allowAssistant, settings.indexing, settings.primaryHost],
+      [slug, settings.subdomain, settings.domain, settings.allowDownload, allowAssistant, settings.indexing, settings.primaryHost],
     );
   } catch (err) {
     const pg = err as { code?: string; constraint?: string };

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useTranslation } from 'react-i18next';
 import {
   ClipboardList,
@@ -147,6 +148,7 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
   const queryClient = useQueryClient();
   const role = useSpaceRole(space);
   const [managingMembers, setManagingMembers] = useState(false);
+  const assistantEnabled = useAssistantEnabled();
   const [editingAssistantKey, setEditingAssistantKey] = useState(false);
   const [publishing, setPublishing] = useState(false);
   // "New base" dialog: the directory it opens on (the current context, like every other «+» item), or null when closed.
@@ -433,15 +435,17 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
                       key chat with the assistant on it. Space-admin gate like its
                       neighbors; the server checks canAdministerSpace on
                       /api/spaces/:space/assistant-key. */}
-                  <MenuItem
-                    icon={<KeyRound size={14} />}
-                    onSelect={() => {
-                      close();
-                      setEditingAssistantKey(true);
-                    }}
-                  >
-                    {t('sidebar.spaceMenu.assistantKey')}
-                  </MenuItem>
+                  {assistantEnabled && (
+                    <MenuItem
+                      icon={<KeyRound size={14} />}
+                      onSelect={() => {
+                        close();
+                        setEditingAssistantKey(true);
+                      }}
+                    >
+                      {t('sidebar.spaceMenu.assistantKey')}
+                    </MenuItem>
+                  )}
                   {/* Publish the space as a public website: visibility (private / instance /
                       public), the site's subdomain / custom domain and its visitor opt-ins.
                       Space-admin gate like its neighbors; the server checks canAdministerSpace
@@ -672,7 +676,7 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
         <div className="flex shrink-0 flex-col gap-px border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800">
           <ReviewQueueButton space={space} onNavigate={onMobileClose} />
           {canEditContent(role) && <RecentChangesButton space={space} />}
-          <AssistantButton />
+          {assistantEnabled && <AssistantButton />}
         </div>
 
         <UserMenu space={space} />
@@ -680,7 +684,7 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
         {managingMembers && <MembersDialog space={space} onClose={() => setManagingMembers(false)} />}
 
 
-        {editingAssistantKey && <SpaceAssistantKeyDialog space={space} onClose={() => setEditingAssistantKey(false)} />}
+        {assistantEnabled && editingAssistantKey && <SpaceAssistantKeyDialog space={space} onClose={() => setEditingAssistantKey(false)} />}
 
         {publishing && <PublishSpaceDialog space={space} onClose={() => setPublishing(false)} />}
         {newBaseDir !== null && <NewBaseDialog space={space} initialParentPath={newBaseDir} onClose={() => setNewBaseDir(null)} />}

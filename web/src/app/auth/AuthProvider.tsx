@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { SpaceRole, User } from '@shared/contracts';
 import { api } from '../api';
 import { useOfflineReaderSession } from '../offline/useOfflineReaderSession';
+import { AssistantEnabledContext } from '../assistant/availability';
 import { initAnalytics } from '../../analytics';
 import { reconcileLanguageFromProfile } from '../../i18n';
 import { resolveSpaceRole } from './roles';
@@ -162,7 +163,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   return (
     <AuthContext.Provider value={value}>
       <SigninParamCleaner />
-      {children}
+      <AssistantEnabledContext.Provider value={!data.assistantDisabled}>{children}</AssistantEnabledContext.Provider>
     </AuthContext.Provider>
   );
 }

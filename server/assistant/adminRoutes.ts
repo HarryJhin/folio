@@ -17,6 +17,7 @@
  * one visible run. Everything computed for a row (space, first question,
  * counters, createdAt/updatedAt) is over the visible part only.
  */
+import { assistantDisabled } from './providerFlags.js';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type {
@@ -374,6 +375,7 @@ function requireInstanceKeyAdmin(request: FastifyRequest): User {
 }
 
 export function registerAssistantAdminRoutes(app: FastifyInstance): void {
+  if (assistantDisabled()) return;
   // --- Instance-wide shared Cursor key (/api/admin/assistant/key[-policy]) -----
   // The key is stored encrypted and never returned: only its Cursor name, the
   // account email and who set it when. The policy flag decides whether members

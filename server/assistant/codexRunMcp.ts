@@ -22,7 +22,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { codexEnabled } from './providerFlags.js';
+import { assistantDisabled, codexEnabled } from './providerFlags.js';
 import { TOOL_RESULT_MAX_CHARS, capText, chatToolDefinitions, normalizeToolOutput, validateToolInput } from './runtime/agentLoop.js';
 
 const ROUTE_PREFIX = '/internal/assistant-run';
@@ -109,6 +109,7 @@ function bearerToken(request: FastifyRequest): string {
 }
 
 export function registerCodexRunMcpRoutes(app: FastifyInstance): void {
+  if (assistantDisabled()) return;
   app.post(`${ROUTE_PREFIX}/:id/mcp`, { bodyLimit: 8 * 1024 * 1024 }, async (request, reply) => {
     // Not loopback, or Codex off: the same answer as a path that does not exist.
     if (!codexEnabled() || !isLoopbackRequest(request)) return reply.callNotFound();

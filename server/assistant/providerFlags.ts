@@ -12,8 +12,15 @@ const FLAG_VARIABLES: Partial<Record<AssistantCredentialProviderId, string>> = {
   minimax: 'FOLIO_MINIMAX_ENABLED',
 };
 
-/** Providers without a flag (Anthropic) are always on. */
+/** The instance-wide switch takes precedence over all provider credentials and per-provider flags. */
+export function assistantDisabled(): boolean {
+  const raw = process.env.FOLIO_DISABLE_ASSISTANT?.trim().toLowerCase();
+  return raw === '1' || raw === 'true';
+}
+
+/** Providers without their own flag (Anthropic) follow the instance-wide switch. */
 export function providerEnabled(provider: AssistantCredentialProviderId): boolean {
+  if (assistantDisabled()) return false;
   const name = FLAG_VARIABLES[provider];
   if (!name) return true;
   const raw = process.env[name]?.trim().toLowerCase();

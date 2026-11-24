@@ -29,6 +29,7 @@ import { recordAudit } from '../audit.js';
 import { assertNotDemo, assertNotDemoAccount, demoInfoFor, isDemoAccountEmail } from '../demo.js';
 import { VISITOR_HEADER, analyticsConfig, rememberVisitor } from '../analytics.js';
 import { sentryWebConfig } from '../sentry.js';
+import { assistantDisabled } from '../assistant/providerFlags.js';
 
 
 function clientInfo(request: FastifyRequest): SessionClientInfo {
@@ -36,13 +37,17 @@ function clientInfo(request: FastifyRequest): SessionClientInfo {
 }
 
 async function toAuthState(user: User): Promise<AuthState> {
-  return { needsSetup: false, user, memberships: await session.membershipsFor(user), ...(await ssoState()), demo: demoInfoFor(true) };
+  return { needsSetup: false, user, memberships: await session.membershipsFor(user), ...(await instanceAuthCapabilities()), demo: demoInfoFor(true) };
 }
 
-/** AuthState's sign-in buttons: `google` (kept for older clients) and every enabled single sign-on provider. */
-export async function ssoState(): Promise<Pick<AuthState, 'google' | 'ssoProviders'>> {
+/** Capabilities shared by the initial auth state, sign-in and invitation responses. */
+export async function instanceAuthCapabilities(): Promise<Pick<AuthState, 'google' | 'ssoProviders' | 'assistantDisabled'>> {
   const list = await publicProviders();
-  return { google: list.some((p) => p.slug === 'google'), ...(list.length > 0 ? { ssoProviders: list } : {}) };
+  return {
+    google: list.some((p) => p.slug === 'google'),
+    ...(list.length > 0 ? { ssoProviders: list } : {}),
+    ...(assistantDisabled() ? { assistantDisabled: true } : {}),
+  };
 }
 
 /** Space-member endpoints accept either a user id or an email as the :identifier segment. */
@@ -61,7 +66,7 @@ export function registerPublicAuthRoutes(app: FastifyInstance): void {
       needsSetup: !(await store.hasAnyUsers()),
       user,
       memberships: user ? await session.membershipsFor(user) : {},
-      ...(await ssoState()),
+      ...(await instanceAuthCapabilities()),
       // Public-demo mode only (server/demo.ts); undefined — and so absent from the JSON — everywhere else.
       demo: demoInfoFor(Boolean(user)),
       // Optional analytics (server/analytics.ts); undefined — and so absent from the JSON — unless the operator switched it on.

@@ -6,6 +6,8 @@ update rather than appended to, so there is no history to dig through.
 
 Version: **0.4.5**.
 
+Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.
+
 Operators can curate primary and reference space navigation and supply exact wiki link routes for collections split across branches. The full space list and every resolved destination still use the viewer’s access rights. See [Installation](INSTALL.md#primary-space-navigation).
 
 ## What Folio is

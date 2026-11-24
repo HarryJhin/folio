@@ -2,6 +2,7 @@ import { SpellCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useAssistantUi } from '../assistant/AssistantHost';
 import { useAssistantRun } from '../assistant/runState';
 import { writingRulesCheckMessage, writingRulesLanguageName } from '../assistant/writingRulesPrompt';
@@ -29,8 +30,9 @@ export function WritingRulesButton(props: WritingRulesButtonProps) {
 
 /** Whether the space has writing rules (`.agent/writing-rules.md`) — without them there is nothing to check against. */
 export function useHasWritingRules(space: string): boolean {
-  const { data } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
-  return data?.spaces.find((s) => s.slug === space)?.agentRules?.writingRules === true;
+  const assistantEnabled = useAssistantEnabled();
+  const { data } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces, enabled: assistantEnabled });
+  return assistantEnabled && data?.spaces.find((s) => s.slug === space)?.agentRules?.writingRules === true;
 }
 
 /**

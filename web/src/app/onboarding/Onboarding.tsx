@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { PageMeta } from '@shared/contracts';
 import { api } from '../api';
+import { useAssistantEnabled } from '../assistant/availability';
 import { canEditContent } from '../auth/roles';
 import { useApiErrorText } from '../errorText';
 import { chooseHomeSpace, homeSpaces, readLastSpace } from '../lastSpace';
@@ -30,7 +31,6 @@ export type FirstKind = 'doc' | 'board' | 'table';
 const KINDS: FirstKind[] = ['doc', 'board', 'table'];
 const FEATURES = ['git', 'together', 'offline', 'tables', 'boards', 'access'] as const;
 const AI_POINTS = ['ask', 'agent', 'rules', 'mcp'] as const;
-const STEP_COUNT = 3;
 
 const FEATURE_ICONS: Record<(typeof FEATURES)[number], ReactNode> = {
   git: <GitBranch size={18} aria-hidden="true" />,
@@ -81,6 +81,8 @@ export function Onboarding() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const errorText = useApiErrorText();
+  const assistantEnabled = useAssistantEnabled();
+  const stepCount = assistantEnabled ? 3 : 2;
 
   const spacesQuery = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
   const spaces = spacesQuery.data?.spaces ?? [];
@@ -90,7 +92,8 @@ export function Onboarding() {
   const remembered = readLastSpace();
   const target = chooseHomeSpace(editable, remembered, spacesQuery.data?.defaultSpace);
 
-  const [step, setStep] = useState(0);
+  const [selectedStep, setStep] = useState(0);
+  const step = Math.min(selectedStep, stepCount - 1);
   const [kind, setKind] = useState<FirstKind>('doc');
   const [spaceName, setSpaceName] = useState('');
   const [connectingGit, setConnectingGit] = useState(false);
@@ -134,7 +137,7 @@ export function Onboarding() {
   }
 
   const canCreate = firstRun || !!target;
-  const last = step === STEP_COUNT - 1;
+  const last = step === stepCount - 1;
 
   /** "Skip" skips the tour, not the outcome: on a first run there is nowhere to land until a space exists. */
   function skip() {
@@ -155,11 +158,11 @@ export function Onboarding() {
           className="flex flex-1 gap-1.5"
           role="progressbar"
           aria-valuemin={1}
-          aria-valuemax={STEP_COUNT}
+          aria-valuemax={stepCount}
           aria-valuenow={step + 1}
-          aria-label={t('onboarding.progress', { step: step + 1, total: STEP_COUNT })}
+          aria-label={t('onboarding.progress', { step: step + 1, total: stepCount })}
         >
-          {Array.from({ length: STEP_COUNT }, (_, index) => (
+          {Array.from({ length: stepCount }, (_, index) => (
             <span
               key={index}
               className={`h-1 flex-1 rounded-full transition-colors ${
@@ -254,10 +257,11 @@ export function Onboarding() {
                 </li>
               ))}
             </ul>
+            {!assistantEnabled && <p className="mt-4 text-sm text-neutral-600 dark:text-neutral-400">{t('onboarding.ai.items.mcp.text')}</p>}
           </section>
         )}
 
-        {step === 2 && (
+        {assistantEnabled && step === 2 && (
           <section aria-labelledby="onboarding-title">
             <StepHeading title={t('onboarding.ai.title')} subtitle={t('onboarding.ai.subtitle')} />
             <div className="mt-8 grid gap-6 sm:grid-cols-[minmax(0,1fr)_17rem]">

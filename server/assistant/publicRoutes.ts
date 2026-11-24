@@ -32,6 +32,7 @@
  * a run is limited per IP and per space per hour (PUBLIC_ASSISTANT_RUNS_PER_HOUR,
  * PUBLIC_ASSISTANT_SPACE_RUNS_PER_HOUR) BEFORE anything else is done.
  */
+import { assistantDisabled } from './providerFlags.js';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -150,6 +151,7 @@ async function publicPageIdOrNull(pageId: string | undefined, space: string): Pr
 }
 
 export function registerPublicAssistantRoutes(app: FastifyInstance): void {
+  if (assistantDisabled()) return;
   app.post('/api/public/spaces/:slug/assistant/runs', async (request, reply): Promise<PublicAssistantRunStarted | FastifyReply> => {
     assertNotDemo('The AI assistant');
     const site = await requireAssistantSite(request);

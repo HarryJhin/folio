@@ -27,6 +27,7 @@ describe('shouldServeSpaFallback', () => {
 
   it('does not fall back for the existing server-route prefixes', () => {
     expect(shouldServeSpaFallback('GET', '/api/health')).toBe(false);
+    expect(shouldServeSpaFallback('GET', '/internal/assistant-run/run-id/mcp')).toBe(false);
     expect(shouldServeSpaFallback('GET', '/files/some-space/x.png')).toBe(false);
     expect(shouldServeSpaFallback('GET', '/a/deadbeef/file.pdf')).toBe(false);
     expect(shouldServeSpaFallback('GET', '/collab')).toBe(false);

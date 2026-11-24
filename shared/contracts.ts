@@ -1676,6 +1676,8 @@ export type User = z.infer<typeof userSchema>;
 export interface AuthState {
   needsSetup: boolean;
   user: User | null;
+  /** Present when the operator has disabled the built-in assistant across this instance. */
+  assistantDisabled?: true;
   /** space slug -> my role: explicit space_members rows, plus (round 27) an implicit 'viewer' for every `visibility: 'instance'` space. Instance-admin grants NOTHING extra here — see docs/spec-access.md §1/§2. */
   memberships: Record<string, SpaceRole>;
   /** "Sign in with Google" is configured and enabled (the `google` single sign-on provider, server/auth/providers.ts). Kept for older clients; the login screen reads `ssoProviders`. */
