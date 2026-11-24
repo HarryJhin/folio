@@ -279,11 +279,13 @@ export async function userForToken(token: string | undefined | null): Promise<Us
   return user;
 }
 
+export function extractBearerToken(request: FastifyRequest): string | undefined {
+  return /^Bearer +([^\s]+)$/i.exec(request.headers.authorization ?? '')?.[1];
+}
+
 function extractBearerPat(request: FastifyRequest): string | undefined {
-  const header = request.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return undefined;
-  const token = header.slice('Bearer '.length).trim();
-  return token.startsWith(PAT_PREFIX) ? token : undefined;
+  const token = extractBearerToken(request);
+  return token?.startsWith(PAT_PREFIX) ? token : undefined;
 }
 
 export interface ResolvedAuth {

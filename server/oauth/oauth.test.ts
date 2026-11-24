@@ -488,9 +488,16 @@ describe('/mcp with OAuth tokens', () => {
   it('a read-scoped token lists tools but cannot call a write tool; a write-scoped one can', async () => {
     const read = await issueTokens({ decision: 'allow' });
     const rc = await mcpClient(read.access_token);
-    const denied = await rc.callTool({ name: 'create_page', arguments: { space: 'nope', parentPath: '', title: 'x', content: 'y' } });
-    expect(denied.isError).toBe(true);
-    expect(JSON.stringify(denied.content)).toContain('write scope');
+    const denied = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `bearer ${read.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'create_page', arguments: {} } }),
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get('www-authenticate')).toContain('error="insufficient_scope"');
+    expect(denied.headers.get('www-authenticate')).toContain('scope="read write"');
+    expect(denied.headers.get('www-authenticate')).toContain(`resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`);
+    expect(await denied.json()).toMatchObject({ error: 'insufficient_scope' });
     expect((await rc.callTool({ name: 'list_spaces', arguments: {} })).isError).toBeFalsy();
     await rc.close();
 

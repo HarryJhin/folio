@@ -13,8 +13,7 @@
  * mcp.test.ts checks that every name in MCP_WRITE_TOOL_NAMES is classified here, so a new
  * write tool cannot be added without deciding which side of the switch it is on.
  */
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, McpServer } from '@modelcontextprotocol/server';
 import * as proposals from './proposals.js';
 import * as storage from './storage.js';
 

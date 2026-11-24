@@ -283,18 +283,19 @@ export async function rotateRefreshToken(raw: string, clientId: string, requeste
 export interface ResolvedOAuthAccess {
   userId: string;
   grantId: string;
+  clientId: string;
   scopes: ApiTokenScope[];
   resource: string;
 }
 
 /** Valid, unexpired access token of a non-revoked grant; undefined otherwise (no hint which reason). */
 export async function resolveAccessToken(raw: string): Promise<ResolvedOAuthAccess | undefined> {
-  const row = await queryOne<{ grant_id: string; user_id: string; scopes: ApiTokenScope[]; resource: string }>(
-    `SELECT t.grant_id, g.user_id, g.scopes, g.resource FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
+  const row = await queryOne<{ grant_id: string; user_id: string; client_id: string; scopes: ApiTokenScope[]; resource: string }>(
+    `SELECT t.grant_id, g.user_id, g.client_id, g.scopes, g.resource FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
       WHERE t.token_hash = $1 AND t.kind = 'access' AND t.expires_at > now() AND g.revoked_at IS NULL`,
     [hashSecret(raw)],
   );
-  return row ? { userId: row.user_id, grantId: row.grant_id, scopes: row.scopes, resource: row.resource } : undefined;
+  return row ? { userId: row.user_id, grantId: row.grant_id, clientId: row.client_id, scopes: row.scopes, resource: row.resource } : undefined;
 }
 
 const LAST_USED_DEBOUNCE_MS = 60_000;
