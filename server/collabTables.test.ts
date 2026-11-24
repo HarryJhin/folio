@@ -1280,3 +1280,20 @@ describe('LIVE table editing over real websockets (spec §6.2 / §17.6)', () => 
     }
   }, 60_000);
 });
+
+it('keeps legacy duplicated row IDs independently addressable in both the file and the restored room', () => {
+  const file = fixtureDoc();
+  file.rows[1].id = file.rows[0].id;
+  const text = serializeTableFile(file);
+  const parsed = parseTableFile(text);
+  if (isTableParseError(parsed)) throw new Error(parsed.message);
+  const ids = parsed.rows.map((row) => row.id);
+  expect(new Set(ids).size).toBe(file.rows.length);
+  expect(ids[0]).toBe(file.rows[0].id);
+  expect(ids[2]).toBe(file.rows[2].id);
+  expect(parseTableFile(text)).toEqual(parsed);
+
+  const oldRoom = seededYDoc(file);
+  oldRoom.transact(() => collab.reconcileTableYDoc(oldRoom, parsed));
+  expect(collab.tableDocFromYDoc(oldRoom).rows).toEqual(parsed.rows);
+});

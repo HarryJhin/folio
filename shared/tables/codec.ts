@@ -95,6 +95,39 @@ export function generateRowId(): string {
   return ulid().toLowerCase().slice(-8);
 }
 
+/**
+ * Older grids could save the same id on a row and its copy. Reserve every
+ * original id, then give later copies stable ids so separate reads of a file
+ * and its Yjs snapshot agree before the next save.
+ */
+export function duplicateRowReplacements(ids: string[], existing: string[] = []): Map<number, string> {
+  const reserved = new Set([...existing, ...ids]);
+  const seen = new Set(existing);
+  const replacements = new Map<number, string>();
+  let sequence = 0;
+  ids.forEach((id, index) => {
+    if (seen.has(id)) {
+      let replacement: string;
+      do {
+        replacement = String(++sequence).padStart(8, '0');
+      } while (reserved.has(replacement));
+      reserved.add(replacement);
+      replacements.set(index, replacement);
+    }
+    seen.add(id);
+  });
+  return replacements;
+}
+
+export function uniqueTableRows(rows: TableRow[], existing?: string[]): TableRow[] {
+  const replacements = duplicateRowReplacements(rows.map((row) => row.id), existing);
+  if (!replacements.size) return rows;
+  return rows.map((row, index) => {
+    const id = replacements.get(index);
+    return id ? { ...row, id } : row;
+  });
+}
+
 // ---------- row-line splitting (pipe-escaped, `\|` -> `|`) ----------
 
 function endsWithUnescapedPipe(s: string): boolean {
@@ -291,7 +324,7 @@ export function parseTableFile(raw: string): TableDoc | TableParseError {
     tail,
     columns,
     views: viewsResult.data,
-    rows,
+    rows: uniqueTableRows(rows),
   };
 }
 

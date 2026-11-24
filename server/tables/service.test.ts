@@ -301,6 +301,24 @@ describe('server/tables/service.ts (real fs + real PG)', () => {
       }
     });
 
+    it('omits hidden cell values from structured view exports', async () => {
+      const { spaceSlug, pageId } = await makeTable('View export', [OWNER, WEEK]);
+      try {
+        const view = await service.addView(pageId, {
+          name: 'Owner only', columns: { hidden: ['week'], order: [], width: {} },
+          sort: [], filter: { op: 'and', rules: [] }, frozen: 0, rowHeight: 'short',
+        });
+        await service.insertRows(pageId, [{ owner: 'alice', week: 'hidden week' }]);
+        for (const format of ['json', 'yaml'] as const) {
+          const result = await service.exportTable(pageId, { format, view: view.id, scope: 'view' });
+          expect(result.data).toContain('alice');
+          expect(result.data).not.toContain('hidden week');
+        }
+      } finally {
+        await deleteTestSpace(spaceSlug);
+      }
+    });
+
     it('export(yaml) -> import(yaml, mode:replace) round-trips a table (spec §10: byte-for-byte-equivalent structure)', async () => {
       const src = await makeTable('YAML Export Source', [OWNER, WEEK]);
       const dst = await makeTable('YAML Import Target', [OWNER]); // deliberately a DIFFERENT starting schema

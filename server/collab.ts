@@ -44,7 +44,7 @@ import type { GitIdentity } from './git.js';
 import { badRequest, HttpError } from './errors.js';
 import { tableColumnSchema, tableViewSchema } from '../shared/contracts.js';
 import type { PageKind, PageMeta, TableCellValue, TableColumn, TableDoc, TableRow, TableView } from '../shared/contracts.js';
-import { isOverHardRowLimit, isTableParseError, parseTableFile, serializeTableFile } from '../shared/tables/index.js';
+import { duplicateRowReplacements, uniqueTableRows, isOverHardRowLimit, isTableParseError, parseTableFile, serializeTableFile } from '../shared/tables/index.js';
 import { decodeScenePayload, extractScenePayload, renderSceneSvg } from './confluenceWhiteboard.js';
 import { orderBoardElements, placeBoundTexts, withBoardIndexes } from './boardOrder.js';
 import type { ExcalidrawElement, ExcalidrawScene } from './confluenceWhiteboard.js';
@@ -1359,6 +1359,10 @@ export function reconcileTableYDoc(ydoc: Y.Doc, file: TableDoc): void {
   // Rows are reconciled against the FILE's columns, which the pass above has
   // just made authoritative — so a column the file dropped is already gone
   // from `columns` and its per-row values are already orphans by this point.
+  const snapshotRows = r.rows.toArray();
+  for (const [index, id] of duplicateRowReplacements(snapshotRows.map(idOf))) {
+    snapshotRows[index].set('id', id);
+  }
   upsertByKey(r.rows, file.rows, (row) => row.id, (row) => buildRowMap(E, file.columns, row), (m, row) => reconcileRowMap(E, m, file.columns, row));
   reorderByKey(E, r.rows, file.rows.map((row) => row.id));
 
@@ -1664,7 +1668,7 @@ function applyTableDocPatch(E: typeof Y, ydoc: Y.Doc, patch: TableDocPatch): voi
   switch (patch.type) {
     case 'insertRows': {
       const cols = columns();
-      r.rows.push(patch.rows.map((row) => buildRowMap(E, cols, row)));
+      r.rows.push(uniqueTableRows(patch.rows, r.rows.toArray().map(idOf)).map((row) => buildRowMap(E, cols, row)));
       return;
     }
     case 'replaceRows':

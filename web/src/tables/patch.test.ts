@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TableRow } from '@shared/contracts';
-import { applyPatch, applyPatches, makeEmptyRow, makeRowId, translateOperations } from './patch';
+import { applyPatch, applyPatches, duplicateGridRow, makeEmptyRow, makeRowId, translateOperations } from './patch';
 import { makeMockTableDoc } from './fixtures';
 
 /**
@@ -171,4 +171,22 @@ describe('makeRowId', () => {
     const constant = () => 0;
     expect(makeRowId(constant)).toBe('00000000');
   });
+});
+
+it('inserts below the selected source row even when the view is filtered', () => {
+  const all = ['one', 'two', 'three', 'four', 'five'].map(id => row(id, {}));
+  const visible = all.slice(3);
+  const created = row('new', {});
+  const next = [visible[0], created, visible[1]];
+  const changes = translateOperations(visible, next, [{ type: 'CREATE', fromRowIndex: 1, toRowIndex: 2 }], all);
+  expect(changes).toEqual([{ kind: 'rows:create', at: 4, rows: [created] }]);
+});
+
+it('keeps the original row after duplicating and deleting its copy', () => {
+  const original = { id: 'original', values: { tags: ['todo'] } };
+  const copy = duplicateGridRow({ rowData: original });
+  expect(copy.values).toEqual(original.values);
+  expect(copy.values.tags).not.toBe(original.values.tags);
+  const doc = { ...makeMockTableDoc(), rows: [original, copy] };
+  expect(applyPatch(doc, { kind: 'rows:delete', ids: [copy.id] }).rows).toEqual([original]);
 });
