@@ -68,6 +68,7 @@ import type {
   OrphansResponse,
 } from '../shared/contracts.js';
 import * as storage from './storage.js';
+import { spaceNavigation } from './spaceNavigation.js';
 import * as collab from './collab.js';
 import { decodeScenePayload, extractScenePayload } from './confluenceWhiteboard.js';
 import * as tables from './tables/service.js';
@@ -421,7 +422,7 @@ export function registerRoutes(app: FastifyInstance): void {
         return info;
       }),
     );
-    return { spaces };
+    return spaceNavigation(spaces);
   });
 
   /**

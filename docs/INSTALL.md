@@ -808,3 +808,25 @@ pass WebSocket connections on `/collab` for that host.
 ```bash
 docker compose down --volumes
 ```
+
+## Primary space navigation
+
+Set `FOLIO_PRIMARY_SPACES` to a comma-separated list of space slugs, in display order.
+The switcher opens on visible primary spaces. The home route remembers a visible primary
+space or selects the configured `FOLIO_DEFAULT_SPACE` if visible, then the first primary. The switcher's search and **Include reference spaces**
+also reach references. The optional `FOLIO_REFERENCE_SPACES` list limits which spaces
+appear as references. Without it, all other accessible spaces are references. A user with
+no visible primary space lands in an accessible reference. Direct links still follow
+the ordinary permission checks, including for files in spaces outside the navigation lists. A bookmarked bare root outside both lists returns to the preferred home when primary spaces are available.
+MCP `list_spaces` uses the same order and accepts `includeAll: true` to include references.
+
+To preserve imported wiki link routes, mount a private JSON file read-only in the app
+and set its container path in `FOLIO_WIKILINK_CATALOG` under the app's environment.
+The source and destination paths are relative to their own spaces. An exact catalog
+entry takes precedence over the local wiki link lookup. A destination must be a visible
+document in a space on the same Git repository. It may be on a different branch.
+Restart the app after replacing the catalog.
+
+```json
+{"handbook":{"guide/start.md":{"support/contact":["reference","contacts/team.md"]}}}
+```

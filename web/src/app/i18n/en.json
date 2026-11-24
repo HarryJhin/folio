@@ -1014,6 +1014,7 @@
       "label": "New page at the space root"
     },
     "spaceSwitcher": {
+      "includeReference": "Include reference spaces",
       "label": "Switch space",
       "searchLabel": "Search spaces",
       "searchPlaceholder": "Search spaces…",

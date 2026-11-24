@@ -232,6 +232,7 @@ export interface MenuItemProps {
   children: ReactNode;
   onSelect: () => void;
   destructive?: boolean;
+  checked?: boolean;
   disabled?: boolean;
   /** Tooltip — e.g. why the item is disabled. */
   title?: string;
@@ -239,14 +240,15 @@ export interface MenuItemProps {
   onPreload?: () => void;
 }
 
-export function MenuItem({ icon, children, onSelect, destructive, disabled, title, onPreload }: MenuItemProps) {
+export function MenuItem({ icon, children, onSelect, destructive, checked, disabled, title, onPreload }: MenuItemProps) {
   useEffect(() => {
     onPreload?.(); // once, when the menu opens
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <button
       type="button"
-      role="menuitem"
+      role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+      aria-checked={checked}
       disabled={disabled}
       title={title}
       onPointerEnter={onPreload}

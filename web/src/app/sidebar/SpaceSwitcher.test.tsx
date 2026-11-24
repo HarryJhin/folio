@@ -18,11 +18,12 @@ const spaces = [
   { slug: 'alpha', name: 'Alpha Team', pageCount: 3 },
   { slug: 'beta', name: 'Beta Sales', pageCount: 7 },
   { slug: 'gamma', name: 'Gamma Support', pageCount: 11 },
+  { slug: 'legacy', name: 'Old bookmark', pageCount: 1 },
 ] as SpaceInfo[];
 
-function renderSwitcher() {
+function renderSwitcher(primarySpaceCount?: number) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  queryClient.setQueryData(['spaces'], { spaces });
+  queryClient.setQueryData(['spaces'], { spaces: primarySpaceCount ? [spaces[2], spaces[1], spaces[0], spaces[3]] : spaces, primarySpaceCount, navigationSpaceCount: primarySpaceCount ? 3 : undefined });
   queryClient.setQueryData(['stars'], { spaces: ['alpha'], pages: [] });
   return render(
     <QueryClientProvider client={queryClient}>
@@ -63,4 +64,24 @@ describe('SpaceSwitcher', () => {
     expect(screen.getByText('No matching spaces')).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'New space' })).toBeTruthy();
   });
+});
+
+it('opens with ordered primary spaces and can find or browse every available space', () => {
+  renderSwitcher(2);
+  const trigger = screen.getByRole('button', { name: 'Switch space' });
+  fireEvent.click(trigger);
+  const list = () => within(screen.getByTestId('space-switcher-list'));
+  const names = () => list().getAllByRole('menuitem').map(item => item.textContent);
+  expect(names()).toEqual(['Gamma Support11', 'Beta Sales7']);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'alpha' } });
+  expect(names()).toEqual(['Alpha Team3']);
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+  fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Include reference spaces' }));
+  expect(names()).toContain('Alpha Team3');
+  expect(names()).not.toContain('Old bookmark1');
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'bookmark' } });
+  expect(list().queryByRole('menuitem')).toBeNull();
+  fireEvent.click(trigger);
+  fireEvent.click(trigger);
+  expect(names()).toEqual(['Gamma Support11', 'Beta Sales7']);
 });

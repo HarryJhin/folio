@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { Outlet, useLocation, useParams } from 'react-router';
+import { Navigate, Outlet, useLocation, useMatch, useParams } from 'react-router';
 import { Sidebar } from './sidebar/Sidebar';
 import { Header } from './header/Header';
 import { ConflictBanner } from './git/ConflictBanner';
@@ -9,7 +9,9 @@ import { QuickSwitcher } from './switcher/QuickSwitcher';
 import { SEARCH_REQUEST_EVENT, type SearchRequestDetail } from '../markdown/searchEvent';
 import { useLocalStorage } from './hooks';
 import { SetPagePresenceContext, type PagePresencePerson } from './presence';
-import { rememberLastSpace } from './lastSpace';
+import { useQuery } from '@tanstack/react-query';
+import { api } from './api';
+import { hiddenRootTarget, homeSpaces, readLastSpace, rememberLastSpace } from './lastSpace';
 import { OfflineRuntime } from './offline/OfflineRuntime';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { PageCrashed } from './routes/PageCrashed';
@@ -91,9 +93,11 @@ export function Shell() {
   // RootRedirect used to send everyone to the FIRST space regardless of where
   // they came from (owner, 11.09: "I go to settings and come back — and land
   // in another space"). This is the only place that reliably knows the answer.
+  const bareRoot = useMatch({ path: '/s/:space', end: true });
+  const { data: spaceList, isLoading: loadingSpaces } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
   useEffect(() => {
-    rememberLastSpace(space);
-  }, [space]);
+    if (homeSpaces(spaceList).some(item => item.slug === space)) rememberLastSpace(space);
+  }, [space, spaceList]);
 
   useEffect(() => {
     function onSearchRequest(event: Event) {
@@ -156,6 +160,10 @@ export function Shell() {
   useEffect(() => {
     setMobileSidebarOpen(false);
   }, [location.pathname]);
+
+  if (bareRoot && loadingSpaces) return null;
+  const redirect = bareRoot && spaceList && hiddenRootTarget(spaceList, space, readLastSpace());
+  if (redirect) return <Navigate to={`/s/${redirect.slug}`} replace />;
 
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-neutral-950">

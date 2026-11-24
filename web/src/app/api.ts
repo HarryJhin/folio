@@ -133,6 +133,7 @@ import type {
   ShareLinkInfo,
   SharedPagePayload,
   SpaceInfo,
+  SpaceList,
   SpacePropertyTypesResponse,
   SpaceTagsResponse,
   SpaceWithVaultNote,
@@ -475,7 +476,7 @@ export const api = {
    */
   getConfig: () => request<Partial<FolioConfig>>('/api/config'),
 
-  listSpaces: () => request<{ spaces: SpaceInfo[] }>('/api/spaces'),
+  listSpaces: () => request<SpaceList>('/api/spaces'),
 
   /** Round 3: empty space (name only) or git-backed (repoUrl/branch/rootPath/token) — same endpoint, richer body. */
   createSpace: (body: CreateSpaceGitBody) =>

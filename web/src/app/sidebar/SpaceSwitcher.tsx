@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { ChevronsUpDown, Plus, Search, Star } from 'lucide-react';
+import { Check, ChevronsUpDown, Layers, Plus, Search, Star } from 'lucide-react';
 import { api } from '../api';
 import { isStarred, useStars, useToggleStar } from '../stars';
 import { Menu, MenuItem } from '../ui/Menu';
@@ -20,6 +20,7 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   // Same reasoning as PageTree's ['tree', space] query (see its comment):
   // a space created/renamed/deleted elsewhere should show up here without
@@ -31,8 +32,9 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
-  const spaces = data?.spaces ?? [];
-  const currentSpace = spaces.find((s) => s.slug === current);
+  const spaces = useMemo(() => data?.spaces.slice(0, data.navigationSpaceCount) ?? [], [data]);
+  const primaryCount = data?.primarySpaceCount;
+  const currentSpace = data?.spaces.find((s) => s.slug === current);
   // Owner (08.09.2026): starred ("pinned") spaces first, the rest below —
   // the list scrolled past 8 rows with no visible cue and looked like spaces
   // were missing. The star per row toggles pinning without closing the menu.
@@ -40,6 +42,7 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
   const toggleStar = useToggleStar();
   const { pinned, others } = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
+    if (primaryCount && !showAll && !needle) return { pinned: [], others: spaces.slice(0, primaryCount) };
     const visible = needle
       ? spaces.filter((space) =>
           `${space.name} ${space.slug}`.toLocaleLowerCase().includes(needle),
@@ -48,7 +51,7 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
     const pinnedList = visible.filter((space) => isStarred(stars, 'space', space.slug));
     const rest = visible.filter((space) => !isStarred(stars, 'space', space.slug));
     return { pinned: pinnedList, others: rest };
-  }, [search, spaces, stars]);
+  }, [search, spaces, stars, showAll, primaryCount]);
 
   // A row is TWO controls: the MenuItem button (navigate) and the star
   // (pin/unpin). They must be SIBLINGS — a <button> inside a <button> is
@@ -96,6 +99,12 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
     <>
       <Menu
         triggerLabel={t('sidebar.spaceSwitcher.label')}
+        onOpenChange={open => {
+          if (!open) {
+            setSearch('');
+            setShowAll(false);
+          }
+        }}
         // min-w-0 alongside flex-1 (not just w-full): a flex item's minimum
         // width defaults to its CONTENT's natural size unless min-w-0 says
         // otherwise, at every level of the chain below — w-full alone only
@@ -151,9 +160,18 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
               )}
               {pinned.map((space) => renderRow(space, true, close))}
               {pinned.length > 0 && others.length > 0 && <div className="my-1 border-t border-neutral-200 dark:border-neutral-700" />}
-              {others.map((space) => renderRow(space, false, close))}
+              {others.map((space) => renderRow(space, isStarred(stars, 'space', space.slug), close))}
             </div>
             <div className="mt-1 border-t border-neutral-200 pt-1 dark:border-neutral-700">
+              {primaryCount !== undefined && primaryCount < spaces.length && (
+                <MenuItem
+                  checked={showAll}
+                  icon={showAll ? <Check size={14} /> : <Layers size={14} />}
+                  onSelect={() => setShowAll(!showAll)}
+                >
+                  {t('sidebar.spaceSwitcher.includeReference')}
+                </MenuItem>
+              )}
               <MenuItem
                 icon={<Plus size={14} />}
                 onSelect={() => {

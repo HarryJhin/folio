@@ -20,7 +20,7 @@ import type { PageMeta } from '@shared/contracts';
 import { api } from '../api';
 import { canEditContent } from '../auth/roles';
 import { useApiErrorText } from '../errorText';
-import { readLastSpace } from '../lastSpace';
+import { chooseHomeSpace, homeSpaces, readLastSpace } from '../lastSpace';
 import { CreateSpaceDialog } from '../sidebar/CreateSpaceDialog';
 import '../i18n/register';
 
@@ -86,9 +86,9 @@ export function Onboarding() {
   const spaces = spacesQuery.data?.spaces ?? [];
   const firstRun = spaces.length === 0;
   // The tour's destination: where the person last was, if they can write there.
-  const editable = spaces.filter((space) => canEditContent(space.myRole));
+  const editable = homeSpaces(spacesQuery.data).filter((space) => canEditContent(space.myRole));
   const remembered = readLastSpace();
-  const target = editable.find((space) => space.slug === remembered) ?? editable[0];
+  const target = chooseHomeSpace(editable, remembered, spacesQuery.data?.defaultSpace);
 
   const [step, setStep] = useState(0);
   const [kind, setKind] = useState<FirstKind>('doc');
