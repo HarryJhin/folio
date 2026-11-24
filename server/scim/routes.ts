@@ -23,9 +23,10 @@ import * as providers from '../auth/providers.js';
 import type { AuthProvider } from '../auth/providers.js';
 import * as session from '../auth/session.js';
 import { SCIM_CONTENT_TYPE, ScimError, scimBadRequest, scimErrorBody, scimNotFound, scimUnauthorized, toScimError } from './errors.js';
+import { AttributeProjection } from './projection.js';
 import { parseScimFilter } from './filter.js';
 import { createScimGroup, deleteScimGroup, getScimGroup, listScimGroups, patchScimGroup, replaceScimGroup } from './groups.js';
-import { SCIM_MAX_RESULTS, resourceTypes, schemaDocuments, serviceProviderConfig } from './schemas.js';
+import { GROUP_SCHEMA, USER_SCHEMA, SCIM_MAX_RESULTS, resourceTypes, schemaDocuments, serviceProviderConfig } from './schemas.js';
 import * as tokens from './tokens.js';
 import { createScimUser, deleteScimUser, getScimUser, listScimUsers, patchScimUser, replaceScimUser, type Page, type ScimContext } from './users.js';
 
@@ -93,14 +94,7 @@ function pageOf(request: FastifyRequest): Page {
   return { startIndex, count };
 }
 
-function excludesMembers(request: FastifyRequest): boolean {
-  const q = request.query as Record<string, string | undefined>;
-  const listed = (raw: string | undefined) => (raw ?? '').split(',').map((s) => s.trim().toLowerCase());
-  if (listed(q.excludedAttributes).includes('members')) return true;
-  // `attributes=displayName` (without members) asks for less too.
-  const attrs = listed(q.attributes).filter(Boolean);
-  return attrs.length > 0 && !attrs.includes('members');
-}
+const projections = new WeakMap<FastifyRequest, AttributeProjection>();
 
 const DISCOVERY = new Set(['/scim/v2/ServiceProviderConfig', '/scim/v2/ResourceTypes', '/scim/v2/Schemas']);
 
@@ -127,6 +121,15 @@ export async function registerScimRoutes(app: FastifyInstance): Promise<void> {
         const path = request.url.split('?')[0].replace(/\/+$/, '');
         if (request.method === 'GET' && [...DISCOVERY].some((d) => path === d || path.startsWith(`${d}/`))) return;
         await authenticate(request);
+        const resource = /^\/scim\/v2\/(Users|Groups)(?:\/|$)/.exec(path);
+        if (resource) {
+          const projection = AttributeProjection.parse(request.query as Record<string, unknown>, resource[1] === 'Users' ? USER_SCHEMA : GROUP_SCHEMA);
+          if (projection) projections.set(request, projection);
+        }
+      });
+      scope.addHook('preSerialization', async (request, reply, body) => {
+        const projection = projections.get(request);
+        return projection && reply.statusCode < 400 ? projection.response(body) : body;
       });
 
       // --- discovery ---
@@ -171,7 +174,7 @@ export async function registerScimRoutes(app: FastifyInstance): Promise<void> {
       // --- Groups ---
       scope.get('/Groups', async (request, reply) => {
         const terms = parseScimFilter((request.query as { filter?: string }).filter);
-        return send(reply, 200, await listScimGroups(ctxOf(request), terms, pageOf(request), { excludeMembers: excludesMembers(request) }));
+        return send(reply, 200, await listScimGroups(ctxOf(request), terms, pageOf(request), { excludeMembers: projections.get(request)?.wants('members') === false }));
       });
       scope.post('/Groups', async (request, reply) => {
         const group = await createScimGroup(ctxOf(request), request.body);
@@ -179,11 +182,14 @@ export async function registerScimRoutes(app: FastifyInstance): Promise<void> {
         return send(reply, 201, group);
       });
       scope.get('/Groups/:id', async (request, reply) =>
-        send(reply, 200, await getScimGroup(ctxOf(request), (request.params as { id: string }).id, { excludeMembers: excludesMembers(request) })),
+        send(reply, 200, await getScimGroup(ctxOf(request), (request.params as { id: string }).id, { excludeMembers: projections.get(request)?.wants('members') === false })),
       );
       scope.put('/Groups/:id', async (request, reply) => send(reply, 200, await replaceScimGroup(ctxOf(request), (request.params as { id: string }).id, request.body)));
       scope.patch('/Groups/:id', async (request, reply) => {
-        const group = await patchScimGroup(ctxOf(request), (request.params as { id: string }).id, request.body);
+        const id = (request.params as { id: string }).id;
+        let group = await patchScimGroup(ctxOf(request), id, request.body);
+        const projection = projections.get(request);
+        if (!group && projection) group = await getScimGroup(ctxOf(request), id, { excludeMembers: !projection.wants('members') });
         return group ? send(reply, 200, group) : send(reply, 204);
       });
       scope.delete('/Groups/:id', async (request, reply) => {

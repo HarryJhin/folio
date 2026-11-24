@@ -62,6 +62,9 @@ export interface AuthProvider {
 }
 
 export const DEFAULT_SCOPES = 'openid email profile';
+function oidcScopes(raw?: string): string {
+  return Array.from(new Set(['openid', ...(raw?.trim() || DEFAULT_SCOPES).split(/\s+/)])).join(' ');
+}
 export const DEFAULT_CLAIM_MAPPING: Required<SsoClaimMapping> = { email: 'email', name: 'name', groups: 'groups' };
 
 // ---------------------------------------------------------------------------
@@ -164,7 +167,7 @@ export function readEnvProviders(env: NodeJS.ProcessEnv = process.env): Map<stri
       issuer,
       clientId,
       clientSecret: env[`${prefix}CLIENT_SECRET`] || undefined,
-      scopes: env[`${prefix}SCOPES`]?.trim() || DEFAULT_SCOPES,
+      scopes: oidcScopes(env[`${prefix}SCOPES`]),
       claimMapping: normalizeMapping({
         email: env[`${prefix}EMAIL_CLAIM`],
         name: env[`${prefix}NAME_CLAIM`],
@@ -302,7 +305,7 @@ function rowToProvider(row: ProviderRow, env: Map<string, EnvProvider>): AuthPro
     clientId: row.client_id,
     clientSecret,
     hasClientSecret: row.source === 'env' ? Boolean(fromEnv?.clientSecret) : row.client_secret_enc !== null,
-    scopes: row.scopes,
+    scopes: oidcScopes(row.scopes),
     claimMapping: normalizeMapping(row.claim_mapping),
     groupSync: normalizeGroupSync(row.group_sync),
     allowedDomains: row.allowed_domains ?? [],
@@ -491,7 +494,7 @@ export async function createProvider(input: ProviderInput): Promise<AuthProvider
         issuer,
         clientId,
         secretEnc,
-        input.scopes?.trim() || DEFAULT_SCOPES,
+        oidcScopes(input.scopes),
         JSON.stringify(normalizeMapping(input.claimMapping)),
         input.allowedDomains ?? [],
         input.jitEnabled ?? false,
@@ -554,7 +557,7 @@ export async function updateProvider(id: string, patch: Partial<ProviderInput>):
         samlCols ? samlCols.clientId : patch.clientId?.trim() || null,
         secretChange,
         secretEnc,
-        patch.scopes?.trim() || null,
+        patch.scopes === undefined ? null : oidcScopes(patch.scopes),
         patch.claimMapping ? JSON.stringify(normalizeMapping(patch.claimMapping)) : null,
         patch.allowedDomains ?? null,
         patch.jitEnabled ?? null,

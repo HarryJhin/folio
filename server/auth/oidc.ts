@@ -81,15 +81,13 @@ export async function clientConfigFor(provider: AuthProvider): Promise<client.Co
     ...(testFetch ? { [client.customFetch]: testFetch } : {}),
   });
   const server = discovered.serverMetadata();
-  // OIDC's default token endpoint auth is client_secret_basic; use post only when the provider says it is the only one.
-  const methods = server.token_endpoint_auth_methods_supported;
-  // Google: client_secret_post, as the pre-OIDC Google sign-in sent it (proven on prod); Basic failed there with an OAuth error body.
-  const auth = !provider.clientSecret
-    ? client.None()
-    : provider.issuer === providers.GOOGLE_ISSUER || (methods && !methods.includes('client_secret_basic') && methods.includes('client_secret_post'))
-      ? client.ClientSecretPost(provider.clientSecret)
-      : client.ClientSecretBasic(provider.clientSecret);
-  const config = new client.Configuration(server, provider.clientId, provider.clientSecret ? { client_secret: provider.clientSecret } : {}, auth);
+  const supported = server.token_endpoint_auth_methods_supported;
+  const usePost = provider.issuer === providers.GOOGLE_ISSUER || (supported && !supported.includes('client_secret_basic') && supported.includes('client_secret_post'));
+  const method = !provider.hasClientSecret ? 'none' : usePost ? 'client_secret_post' : 'client_secret_basic';
+  const secret = method === 'none' ? undefined : provider.clientSecret;
+  if (method !== 'none' && !secret) throw new Error('OIDC client secret is unavailable');
+  const auth = secret ? (method === 'client_secret_post' ? client.ClientSecretPost(secret) : client.ClientSecretBasic(secret)) : client.None();
+  const config = new client.Configuration(server, provider.clientId, { token_endpoint_auth_method: method, client_secret: secret }, auth);
   if (testFetch) config[client.customFetch] = testFetch;
   for (const fn of execute) fn(config);
   // The ID token comes straight from the token endpoint over TLS — still, verify its signature against the JWKS.

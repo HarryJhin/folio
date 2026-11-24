@@ -56,7 +56,11 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** The provider side of every request openid-client makes. */
-async function mockFetch(url: string, options: { body?: unknown; method?: string }): Promise<Response> {
+async function mockFetch(
+  url: string,
+  options: { body?: unknown; method?: string },
+  supportedMethods = ['client_secret_basic', 'client_secret_post'],
+): Promise<Response> {
   const u = new URL(url);
   const op = ops.get(u.origin);
   if (!op) return new Response('unknown host', { status: 404 });
@@ -69,7 +73,7 @@ async function mockFetch(url: string, options: { body?: unknown; method?: string
       response_types_supported: ['code'],
       subject_types_supported: ['public'],
       id_token_signing_alg_values_supported: ['RS256'],
-      token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+      token_endpoint_auth_methods_supported: supportedMethods,
       code_challenge_methods_supported: ['S256'],
     });
   }
@@ -231,6 +235,36 @@ describe('single sign-on through OpenID Connect (mock provider, real PG)', () =>
   }
 
   // -------------------------------------------------------------------------
+
+  it('adds openid once when reading a provider with older scopes', async () => {
+    const p = await provider();
+    await queryOne('UPDATE auth_providers SET scopes = $2 WHERE id = $1', [p.id, 'profile email profile']);
+    const start = await app.inject({ method: 'GET', url: `/api/auth/oidc/${p.slug}/start` });
+    expect(new URL(String(start.headers.location)).searchParams.get('scope')?.split(' ')).toEqual(['openid', 'profile', 'email']);
+  });
+
+  it.each([
+    { supported: ['client_secret_post', 'client_secret_basic'], secret: 'shh', expected: 'client_secret_basic' },
+    { supported: ['client_secret_post'], secret: 'shh', expected: 'client_secret_post' },
+    { supported: ['client_secret_basic'], secret: '', expected: 'none' },
+  ])('automatically selects $expected for token exchange', async ({ supported, secret, expected }) => {
+    let actual: string | undefined;
+    __setOidcFetchForTests(async (url, options) => {
+      if (new URL(url).pathname === '/token') {
+        const form = new URLSearchParams(String(options.body));
+        actual = new Headers(options.headers).has('authorization') ? 'client_secret_basic' : form.has('client_secret') ? 'client_secret_post' : 'none';
+      }
+      return mockFetch(url, options, supported);
+    });
+    try {
+      const p = await provider({ clientSecret: secret });
+      const out = await signIn(p.slug, { claims: { sub: p.slug, email: `${p.slug}@acme.test` } });
+      expect(out.sessionCookie).toBeTruthy();
+      expect(actual).toBe(expected);
+    } finally {
+      __setOidcFetchForTests(mockFetch as never);
+    }
+  });
 
   it('JIT: a new person signs in, gets an account (no password, not admin), the default spaces and the raw groups claim', async () => {
     const p = await provider({ jitDefaultSpaces: { [space]: 'editor', 'no-such-space': 'viewer' } });
@@ -618,6 +652,7 @@ describe('mapClaims / env parsing (pure)', () => {
       FOLIO_OIDC_MY_IDP_ISSUER: 'https://idp.test/realms/x',
       FOLIO_OIDC_MY_IDP_CLIENT_ID: 'folio',
       FOLIO_OIDC_MY_IDP_CLIENT_SECRET: 'sec',
+      FOLIO_OIDC_MY_IDP_SCOPES: 'profile',
       FOLIO_OIDC_MY_IDP_NAME: 'My IdP',
       FOLIO_OIDC_MY_IDP_DOMAINS: 'A.test, @b.test',
       FOLIO_OIDC_MY_IDP_JIT: 'true',
@@ -631,6 +666,7 @@ describe('mapClaims / env parsing (pure)', () => {
     const out = providers.readEnvProviders(env);
     expect(out.get('my-idp')).toMatchObject({
       displayName: 'My IdP',
+      scopes: 'openid profile',
       allowedDomains: ['a.test', 'b.test'],
       jitEnabled: true,
       enforceSso: true,
