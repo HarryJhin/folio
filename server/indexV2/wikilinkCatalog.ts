@@ -17,7 +17,9 @@ export async function applyWikilinkCatalog(source: { space: string; relPath: str
   const route = cached.routes[source.space]?.[source.relPath];
   if (!route) return;
 
-  const written = [...new Set(links.filter(link => isWikiSyntax(link.syntax) && Object.hasOwn(route, link.linkPath)).map(link => link.linkPath))];
+  const mapped = links.filter(link =>
+    (isWikiSyntax(link.syntax) || link.syntax === 'md') && Object.hasOwn(route, link.linkPath));
+  const written = [...new Set(mapped.map(link => link.linkPath))];
   if (!written.length) return;
   const params: unknown[] = [source.space, written, written.map(path => route[path][0]), written.map(path => route[path][1])];
   const visible = visiblePagesSql('p', viewer, params);
@@ -30,13 +32,13 @@ export async function applyWikilinkCatalog(source: { space: string; relPath: str
       WHERE ${visible}`, params,
   );
   const targets = new Map(matches.map(match => [match.written, match]));
-  for (const link of links) {
-    if (!isWikiSyntax(link.syntax) || !Object.hasOwn(route, link.linkPath)) continue;
+  for (const link of mapped) {
+    if (link.syntax === 'md') link.mappedMarkdown = true;
     // A missing or private catalog destination must never send the reader to a local namesake.
     const target = targets.get(link.linkPath);
     link.kind = target ? 'page' : 'unresolved';
     link.targetPageId = target?.id ?? null;
-    link.targetPath = target?.path ?? unresolvedWikiPath(link.linkPath);
+    link.targetPath = target?.path ?? (link.syntax === 'md' ? link.linkPath : unresolvedWikiPath(link.linkPath));
     link.targetSpace = target?.space_slug;
     link.fragmentResolved = null;
   }

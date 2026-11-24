@@ -23,6 +23,7 @@ export interface RelativeLinksOptions {
    * (Obsidian: `![](x.png)` finding `Attachments/x.png`) is served from the resolved path, not the path as written.
    */
   wikilinks?: WikilinkContext;
+  pageUrl?: (id: string, targetSpace?: string) => string;
 }
 
 /** /files/<space>/<resolved>, plus ?share=<token> when rendering for a guest (round 8). */
@@ -55,7 +56,7 @@ function filesUrl(space: string, resolved: string, shareToken: string | undefine
  *   card (link-preview.tsx renders a previewed page's body through this same
  *   <Markdown> pipeline) — one fix here reaches both surfaces.
  */
-export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks }: RelativeLinksOptions) {
+export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pageUrl }: RelativeLinksOptions) {
   const attachment = wikilinks?.status === 'ready' ? wikilinks.resolveAttachment : undefined;
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
@@ -90,6 +91,19 @@ export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks }: 
         const href = node.properties.href;
         if (typeof href !== 'string' || !href) return;
 
+        const authored = splitFragment(href);
+        const mapped = wikilinks?.status === 'ready' ? wikilinks.resolveMappedMarkdown?.(authored.path) : undefined;
+        if (mapped !== undefined && !isExternalUrl(href)) {
+          if (mapped) {
+            const url = pageUrl?.(mapped.id, mapped.space) ?? `/s/${encodeURIComponent(mapped.space)}/p/${encodeURIComponent(mapped.id)}`;
+            node.properties.href = url + authored.hash;
+            node.properties.dataFolioNav = url + authored.hash;
+          } else {
+            node.tagName = 'span';
+            delete node.properties.href;
+          }
+          return;
+        }
         if (isExternalUrl(href)) {
           node.properties.target = '_blank';
           node.properties.rel = ['noopener', 'noreferrer'];

@@ -825,7 +825,7 @@ the reference result for that same file in the same Git repository.
 To preserve imported wiki link routes, mount a private JSON file read-only in the app
 and set its container path in `FOLIO_WIKILINK_CATALOG` under the app's environment.
 The source and destination paths are relative to their own spaces. An exact catalog
-entry takes precedence over the local wiki link lookup. A destination must be a visible
+entry takes precedence for wiki links and ordinary Markdown links pointing to a local path. A destination must be a visible
 document in a space on the same Git repository. It may be on a different branch.
 Restart the app after replacing the catalog.
 

@@ -67,15 +67,18 @@ it('uses an explicit source-path route across branches, even with a visible loca
   const source = await storage.createPage({ space: a, parentPath: '', title: 'Route test', kind: 'doc' });
   await storage.createPage({ space: a, parentPath: '', title: 'Other', kind: 'doc' });
   const actual = await storage.createPage({ space: b, parentPath: '', title: 'Destination', kind: 'doc' });
-  await storage.writeDocBody(source.id, '[[Other#Part|Open]]');
+  await storage.writeDocBody(source.id, '[[Other#Part|Open]]\n\n[Manual](/library/Manual)');
   const entry = (await storage.getEntry(source.id))!;
   const dir = await mkdtemp(join(tmpdir(), 'folio-link-routes-'));
   try {
     const file = join(dir, 'routes.json');
-    await writeFile(file, JSON.stringify({ [a]: { [entry.relPath]: { Other: [b, actual.path] } } }));
+    await writeFile(file, JSON.stringify({ [a]: { [entry.relPath]: { Other: [b, actual.path], '/library/Manual': [b, actual.path] } } }));
     vi.stubEnv('FOLIO_WIKILINK_CATALOG', file);
     const read = async (user: typeof owner) => (await getPageMetadata(entry, userViewer(user))).links[0];
     expect(await read(owner)).toMatchObject({ kind: 'page', targetPageId: actual.id, targetSpace: b, fragment: 'Part', displayText: 'Open' });
+    const markdown = async (user: typeof owner) => (await getPageMetadata(entry, userViewer(user))).links.find(link => link.syntax === 'md');
+    expect(await markdown(owner)).toMatchObject({ kind: 'page', mappedMarkdown: true, targetSpace: b, targetPageId: actual.id });
+    expect(await markdown(reader)).toMatchObject({ kind: 'unresolved', mappedMarkdown: true, targetPageId: null, targetPath: '/library/Manual' });
     expect(await read(reader)).toMatchObject({ kind: 'unresolved', targetPageId: null, targetPath: 'Other.md' });
     await users.setMembership(b, reader.id, 'viewer');
     expect(await read(reader)).toMatchObject({ targetPageId: actual.id });

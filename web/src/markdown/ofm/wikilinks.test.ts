@@ -115,3 +115,14 @@ describe('reading: embeds', () => {
     expect(html).toContain('<p>here</p>');
   });
 });
+
+it('follows mapped ordinary Markdown paths and keeps unavailable destinations inert', () => {
+  const routes = ready([
+    link({ linkPath: '/library/Team Note', syntax: 'md', kind: 'page', targetPageId: 'P2', targetSpace: 'library', mappedMarkdown: true }),
+    link({ linkPath: '/library/Closed', syntax: 'md', kind: 'unresolved', mappedMarkdown: true }),
+  ]);
+  const html = render('[Open](</library/Team Note#details>) [Closed](/library/Closed) [Other](/other/path)', routes);
+  expect(html).toContain('data-folio-nav="/s/library/p/P2#details"');
+  expect(html).toContain('<span>Closed</span>');
+  expect(html).toContain('href="/other/path"');
+});
