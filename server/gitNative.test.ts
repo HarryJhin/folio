@@ -144,6 +144,32 @@ describe('git-native spaces (round 3, real git + real PG)', () => {
     await deleteTestSpace(space.slug);
   });
 
+  it('reads a listed revision from its pre-rename filename for preview and restore', async () => {
+    const space = await storage.createSpace('Rename history', null);
+    try {
+      const doc = await storage.createPage({ space: space.slug, parentPath: '', title: 'Original', kind: 'doc' });
+      const dir = storage.getRepoDir(space.slug);
+      const author = { name: 'Tester', email: 'tester@example.test' };
+      const original = '# Original\n\nOriginal body.\n';
+      await storage.writeDocBody(doc.id, original);
+      // Git quotes this name in line-oriented log output.
+      await fs.rename(path.join(dir, doc.path), path.join(dir, 'Original "draft".md'));
+      await storage.scanSpace(space.slug);
+      await git.commitAll(dir, 'original', author);
+      await storage.renamePageSlug(doc.id, 'new-location');
+      await git.commitAll(dir, 'rename', author);
+      await storage.writeDocBody(doc.id, '# Changed\n');
+      await git.commitAll(dir, 'edit', author);
+      const rev = (await gitSync.getPageHistory(doc.id)).find(r => r.message === 'original')!;
+      const preview = await gitSync.getPageAtSha(doc.id, rev.sha);
+      expect(preview.markdown).toBe(original);
+      await collab.editDocBody(doc.id, preview.markdown!);
+      expect(await storage.readFreshDocBody(doc.id)).toBe(original);
+    } finally {
+      await deleteTestSpace(space.slug);
+    }
+  });
+
   it('conflict detection: a diverged merge lands with markers and status=conflict, clearing once resolved', async () => {
     const bareDir = path.join(os.tmpdir(), `folio-test-bare-${Date.now()}.git`);
     const { execFile } = await import('node:child_process');

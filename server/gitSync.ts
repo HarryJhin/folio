@@ -578,6 +578,7 @@ export async function getFilePageRevisionBytes(pageId: string, sha: string): Pro
  * every other kind-dependent response in this codebase already does.
  */
 export async function getPageAtSha(pageId: string, sha: string): Promise<PageAtShaResponse> {
+  if (!SHA_PATTERN.test(sha)) throw badRequest('invalid revision');
   const entry = await storageMod.requireEntry(pageId);
   // A pdf/office's bytes are never read as text (see server/storage.ts's
   // Binary page files module doc comment): the answer describes the file
@@ -594,7 +595,8 @@ export async function getPageAtSha(pageId: string, sha: string): Promise<PageAtS
   const askpass = (await hasSpaceToken(entry.space)) ? await ensureAskpassScript() : undefined;
   let raw: string;
   try {
-    raw = await git.showFileAt(dir, sha, relToRepo, askpass, entry.space);
+    const revision = await git.pathAtRevisionSha(dir, relToRepo, sha, askpass, entry.space);
+    raw = await git.showFileAt(dir, revision?.sha ?? sha, revision?.path ?? relToRepo, askpass, entry.space);
   } catch {
     throw notFound('revision');
   }

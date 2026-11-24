@@ -685,16 +685,20 @@ export async function pathAtRevisionSha(
   askpassScript?: string,
   spaceSlug?: string,
 ): Promise<{ sha: string; path: string } | null> {
-  const mark = '\x1e';
   const { stdout } = await execGit(
     dir,
-    ['-c', 'core.quotepath=false', 'log', '--follow', '--name-only', `--pretty=format:${mark}%H`, '--', relPath],
+    ['log', '--follow', '--name-only', '-z', '--pretty=format:%H', '--', relPath],
     remoteAuthEnv(askpassScript, spaceSlug),
   );
   const wanted = sha.toLowerCase();
-  for (const record of stdout.split(mark)) {
-    const [head, ...names] = record.split('\n').filter((line) => line.length > 0);
-    if (head && head.toLowerCase().startsWith(wanted) && names.length > 0) return { sha: head, path: names[0] };
+  // -z keeps paths literal even when they contain quotes or newlines. Git
+  // separates the commit records and terminates each reported path with NUL.
+  for (const record of stdout.split('\0\0')) {
+    const newline = record.indexOf('\n');
+    if (newline < 0) continue;
+    const commit = record.slice(0, newline);
+    const path = record.slice(newline + 1).split('\0', 1)[0];
+    if (commit.startsWith(wanted) && path) return { sha: commit, path };
   }
   return null;
 }

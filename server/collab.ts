@@ -231,6 +231,8 @@ export function isDocSeeded(docName: string): boolean {
  * content with different, non-merging CRDT op identity).
  */
 const seedingPromises = new Map<string, Promise<void>>();
+// y-websocket removes a room from docs as soon as its final asynchronous flush starts.
+const closingPromises = new Map<string, Promise<void>>();
 
 /**
  * Round 8 P0 FIX (root cause). Confirmed via live repro: a share-link guest
@@ -277,16 +279,28 @@ async function ensureDocSeeded(docName: string): Promise<void> {
     if (inFlight) await inFlight;
     return;
   }
-  const doc = new WSSharedDoc(docName);
-  docs.set(docName, doc);
-  const seed = bindState(docName, doc)
-    .then(() => {
-      seededDocs.set(docName, true);
-    })
-    .finally(() => {
-      seedingPromises.delete(docName);
-    });
-  seedingPromises.set(docName, seed);
+  // Publish the room between file writes. Seeding reads the winning file and
+  // edits arriving afterwards wait for its promise before comparing live text.
+  const { seed, closing } = await storage.withDocFileLock(docName, async () => {
+    const closing = closingPromises.get(docName);
+    if (closing) return { closing };
+    if (docs.has(docName)) return { seed: seedingPromises.get(docName) };
+    const doc = new WSSharedDoc(docName);
+    docs.set(docName, doc);
+    const seed = bindState(docName, doc)
+      .then(() => {
+        seededDocs.set(docName, true);
+      })
+      .finally(() => {
+        seedingPromises.delete(docName);
+      });
+    seedingPromises.set(docName, seed);
+    return { seed };
+  });
+  if (closing) {
+    await closing;
+    return ensureDocSeeded(docName);
+  }
   await seed;
 }
 
@@ -2455,15 +2469,15 @@ const PERSIST_MAX_RETRIES = 8;
  */
 async function writeState(docName: string, _ydoc: Y.Doc): Promise<void> {
   const writer = writers.get(docName);
-  if (writer) {
-    await writer.flush();
+  const closing = writer ? writer.flush() : Promise.resolve();
+  closingPromises.set(docName, closing);
+  try {
+    await closing;
+  } finally {
     writers.delete(docName);
+    seededDocs.delete(docName);
+    closingPromises.delete(docName);
   }
-  // The doc is about to be evicted from y-websocket's `docs` map (closeConn, right
-  // after this resolves) — a future reopen is a genuinely fresh WSSharedDoc that
-  // must go through ensureDocSeeded again, so this doc's "seeded" flag shouldn't
-  // outlive it either.
-  seededDocs.delete(docName);
 }
 
 /** Registers the persistence hooks with y-websocket. Call once at server boot. */
@@ -2761,14 +2775,15 @@ export class RevisionConflictError extends HttpError {
  * between them — so nobody can type in between; everything that awaits
  * (entry lookup, icon/cover persist) is done before it or after it.
  */
-export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string): Promise<void> {
+export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string): Promise<boolean> {
   const markdown = normalizeEol(rawMarkdown);
   const doc = docs.get(id);
-  if (!doc) return;
+  if (!doc) return false;
   const ytext = doc.getText('content');
   // Early refusal, before anything is persisted (icon/cover below). Re-checked right before the replacement.
   if (baseRevision !== undefined && bodyRevision(ytext.toString()) !== baseRevision) throw new RevisionConflictError(bodyRevision(ytext.toString()));
   const entry = await storage.getEntry(id);
+  if (docs.get(id) !== doc) return false;
 
   // icon/cover never ride the Yjs body (frontmatter isn't part of the CRDT), so an
   // icon/cover-only PUT (body text unchanged) would otherwise never trigger the
@@ -2785,7 +2800,6 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
       await storage.setDocIconCover(entry, icon, cover, markdown);
     }
   };
-  if (baseRevision === undefined) await persistIconCover();
 
   // A REST/MCP body write replaces the whole live text — including whatever
   // someone typed into the room after the caller read the page. Captured
@@ -2799,9 +2813,10 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
     // browser user's Undo still finds their earlier typing after an agent edit (issue #18).
     doc.transact(() => setYText(ytext, markdown));
   }
-  if (baseRevision !== undefined) await persistIconCover();
+  await persistIconCover();
   if (changed) await backupRoomText(id, 'body replaced through the API', before);
   if (entry) await storage.patchEntryContent(entry, markdown);
+  return true;
 }
 
 /**
@@ -2818,27 +2833,32 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
  * write is unconditional. Internal callers (tags, link rewrites, history
  * restore) leave it out on purpose.
  *
- * Residual window: for a page with no open room the revision is compared with
- * the file and the file is written after an await, so a room opened and typed
- * into inside that gap is not noticed (it is then seeded from the file).
  */
 export async function editDocBody(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string): Promise<PageMeta> {
-  // Normalized for the file too: the next room opened on it is seeded from it.
   const markdown = normalizeEol(rawMarkdown);
-  if (isDocLive(id)) {
-    await applyMarkdownUpdate(id, markdown, overrideIcon, overrideCover, baseRevision);
-    return storage.toPageMeta(await storage.requireEntry(id));
-  }
-  if (baseRevision !== undefined) {
-    const current = bodyRevision(await storage.readFreshDocBody(id));
-    // A room may have opened while the file was read: then the room's text is the authority, compared with no await in between.
-    if (isDocLive(id)) {
-      await applyMarkdownUpdate(id, markdown, overrideIcon, overrideCover, baseRevision);
+  const verifyBody = (current: string) => {
+    const revision = bodyRevision(current);
+    if (revision !== baseRevision) throw new RevisionConflictError(revision);
+  };
+  for (;;) {
+    const result = await storage.withDocFileLock(id, async () => {
+      const closing = closingPromises.get(id);
+      if (closing) return { closing };
+      const doc = docs.get(id);
+      if (doc) return { doc, seeding: seedingPromises.get(id) };
+      return storage.writeDocBodyLocked(id, markdown, overrideIcon, overrideCover, baseRevision === undefined ? undefined : verifyBody);
+    });
+    if ('meta' in result) return result.meta;
+    if ('closing' in result) {
+      await result.closing;
+      continue;
+    }
+    if (result.seeding) await result.seeding;
+    if (docs.get(id) !== result.doc) continue;
+    if (await applyMarkdownUpdate(id, markdown, overrideIcon, overrideCover, baseRevision)) {
       return storage.toPageMeta(await storage.requireEntry(id));
     }
-    if (current !== baseRevision) throw new RevisionConflictError(current);
   }
-  return storage.writeDocBody(id, markdown, overrideIcon, overrideCover);
 }
 
 /** Same idea as applyMarkdownUpdate, for H1-only renames. Returns false if no live doc is open. */

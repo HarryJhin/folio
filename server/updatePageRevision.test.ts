@@ -140,6 +140,31 @@ describe('update_page / PUT /api/pages/:id — baseRevision (real PG)', () => {
     expect(collab.normalizeEol(await storage.readFreshDocBody(cold))).toBe('# Cold\n\nnew\n');
   });
 
+  it('serializes competing REST and MCP revisions on a closed document', async () => {
+    const id = await newPage('# Cold\n');
+    const { bodyRevision } = await get(id);
+    const [rest, mcp] = await Promise.all([
+      put(id, { baseRevision: bodyRevision, markdown: '# REST\n' }),
+      callJson('update_page', { id, baseRevision: bodyRevision, markdown: '# MCP\n' }),
+    ]);
+    expect([rest.statusCode === 200, !mcp.isError].filter(Boolean)).toHaveLength(1);
+    if (mcp.isError) expect(mcp.text).toContain('revision_conflict');
+    else expect(rest.json()).toMatchObject({ code: 'revision_conflict' });
+    expect((await get(id)).markdown).toBe(mcp.isError ? '# REST\n' : '# MCP\n');
+  });
+
+  it('seeds a concurrently opened room from the accepted closed-page revision', async () => {
+    const id = await newPage('# Before\n');
+    const revision = (await get(id)).bodyRevision;
+    const [updated, anchor] = await Promise.all([
+      collab.editDocBody(id, '# After\n', undefined, undefined, revision),
+      collab.anchorQuote(id, 'After'),
+    ]);
+    expect(updated.id).toBe(id);
+    expect(anchor?.quotedText).toBe('After');
+    expect((await get(id)).markdown).toBe('# After\n');
+  });
+
   it('without baseRevision the write is unconditional, as before', async () => {
     const id = await newPage('# Page\n\nfirst\n');
     const ytext = openRoom(id, '# Page\n\nfirst\n');

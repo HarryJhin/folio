@@ -8,7 +8,7 @@ import * as users from '../auth/store.js';
 import { query } from '../db/pool.js';
 import { deleteTestSpace, setUpTestSchema } from '../db/testSchema.js';
 import * as storage from '../storage.js';
-import { getPageMetadata } from './read.js';
+import { getPageMetadata, listUnresolvedLinks } from './read.js';
 
 let teardown: () => Promise<void>;
 const spaces: string[] = [];
@@ -40,6 +40,10 @@ it('resolves repository-root note paths only on the same branch, to exact files 
     expect.objectContaining({ linkPath: 'library/manual', targetPageId: note.id, targetSpace: b, displayText: 'Read this', fragment: 'Part' }),
     expect.objectContaining({ linkPath: 'library/sub/manual', kind: 'unresolved', targetPageId: null }),
   ]));
+  const unresolved = (user: typeof owner, offset = 0) => listUnresolvedLinks(a, userViewer(user), { limit: 1, offset });
+  expect(await unresolved(owner)).toMatchObject({ total: 1, links: [{ targetPath: 'library/sub/manual.md' }] });
+  expect(await unresolved(owner, 1)).toEqual({ total: 1, links: [] });
+  expect((await unresolved(reader)).total).toBe(2);
   const target = async (user: typeof owner) => (await links(user)).find(link => link.linkPath === 'library/manual');
   expect(await target(reader)).toMatchObject({ kind: 'unresolved', targetPageId: null });
   await users.setMembership(b, reader.id, 'viewer');
@@ -80,7 +84,11 @@ it('uses an explicit source-path route across branches, even with a visible loca
     expect(await markdown(owner)).toMatchObject({ kind: 'page', mappedMarkdown: true, targetSpace: b, targetPageId: actual.id });
     expect(await markdown(reader)).toMatchObject({ kind: 'unresolved', mappedMarkdown: true, targetPageId: null, targetPath: '/library/Manual' });
     expect(await read(reader)).toMatchObject({ kind: 'unresolved', targetPageId: null, targetPath: 'Other.md' });
+    const unresolved = (user: typeof owner) => listUnresolvedLinks(a, userViewer(user), { limit: 10, offset: 0 });
+    expect(await unresolved(owner)).toEqual({ total: 0, links: [] });
+    expect((await unresolved(reader)).links.map(link => link.targetPath).sort()).toEqual(['/library/Manual', 'Other.md']);
     await users.setMembership(b, reader.id, 'viewer');
+    expect((await unresolved(reader)).total).toBe(0);
     expect(await read(reader)).toMatchObject({ targetPageId: actual.id });
     await setAccess(owner, (await storage.getEntry(actual.id))!, 'restricted', []);
     expect(await read(reader)).toMatchObject({ targetPageId: null, targetPath: 'Other.md' });

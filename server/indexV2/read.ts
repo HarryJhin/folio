@@ -27,7 +27,7 @@ import type {
 } from '../../shared/contracts.js';
 import { query, queryOne } from '../db/pool.js';
 import { sqlParam, visiblePagesSql, type PageViewer } from '../accessSql.js';
-import { applyWikilinkCatalog } from './wikilinkCatalog.js';
+import { applyWikilinkCatalog, spaceWikilinkCatalog } from './wikilinkCatalog.js';
 import { APP_LINK_SHAPE, isWikiSyntax, unresolvedWikiPath } from './resolve.js';
 
 const ORDER_SENTINEL = Number.MAX_SAFE_INTEGER;
@@ -156,6 +156,20 @@ export async function getPageLinks(pageId: string, viewer: PageViewer): Promise<
   return links;
 }
 
+/** Unambiguous visible matches for repository-root wikilinks written in the source space ($1). */
+function repositoryWikilinkMatches(refs: string, visible: string): string {
+  return `SELECT written, min(p.id) AS id, min(p.path) AS path, min(p.space_slug) AS space_slug
+       FROM spaces src
+       JOIN spaces dst ON dst.repo_url = src.repo_url AND dst.branch = src.branch AND dst.root_path <> ''
+       CROSS JOIN (${refs}) AS refs(written)
+       CROSS JOIN LATERAL (SELECT substr(written, length(dst.root_path) + 2) AS rel) AS target
+       JOIN pages_index p ON p.space_slug = dst.slug AND p.kind = 'doc'
+                         AND p.path IN (target.rel, target.rel || '.md', target.rel || '.mdx')
+      WHERE src.slug = $1 AND src.repo_url <> ''
+        AND starts_with(written, dst.root_path || '/') AND ${visible}
+      GROUP BY written HAVING count(*) = 1`;
+}
+
 /** A repository may be split into several spaces by root_path. Complete unresolved note links at read time,
  * when both the target branch and the actual reader's permissions are known. Public/share views remain space-local. */
 async function resolveRepositoryWikilinks(space: string, links: PageLinkRef[], viewer: PageViewer): Promise<void> {
@@ -167,16 +181,7 @@ async function resolveRepositoryWikilinks(space: string, links: PageLinkRef[], v
   const params: unknown[] = [space, paths];
   const visible = visiblePagesSql('p', viewer, params);
   const matches = await query<{ written: string; id: string; path: string; space_slug: string }>(
-    `SELECT written, min(p.id) AS id, min(p.path) AS path, min(p.space_slug) AS space_slug
-       FROM spaces src
-       JOIN spaces dst ON dst.repo_url = src.repo_url AND dst.branch = src.branch AND dst.root_path <> ''
-       CROSS JOIN unnest($2::text[]) AS refs(written)
-       CROSS JOIN LATERAL (SELECT substr(written, length(dst.root_path) + 2) AS rel) AS target
-       JOIN pages_index p ON p.space_slug = dst.slug AND p.kind = 'doc'
-                         AND p.path IN (target.rel, target.rel || '.md', target.rel || '.mdx')
-      WHERE src.slug = $1 AND src.repo_url <> ''
-        AND starts_with(written, dst.root_path || '/') AND ${visible}
-      GROUP BY written HAVING count(*) = 1`,
+    repositoryWikilinkMatches('SELECT unnest($2::text[])', visible),
     params,
   );
   const byPath = new Map(matches.map(m => [m.written, m]));
@@ -278,40 +283,51 @@ export async function listSpaceTagCounts(space: string, viewer: PageViewer): Pro
 export async function listUnresolvedLinks(space: string, viewer: PageViewer, page: { limit: number; offset: number }): Promise<UnresolvedLinksResponse> {
   const params: unknown[] = [space];
   const visible = visiblePagesSql('p', viewer, params, { excludeTemplates: true });
-  const from = `FROM page_links l JOIN pages_index p ON p.id = l.source_page_id WHERE p.space_slug = $1 AND l.kind = 'unresolved' AND ${visible}`;
-  const total = await queryOne<{ n: number }>(`SELECT COUNT(*)::int AS n ${from}`, params);
-  const listParams = [...params];
-  const limit = sqlParam(listParams, page.limit);
-  const offset = sqlParam(listParams, page.offset);
-  const rows = await query<{
-    source_id: string;
-    source_path: string;
-    source_title: string;
-    target_path: string;
-    syntax: LinkSyntax;
-    fragment: string | null;
-    line: number;
-    context: string;
-  }>(
-    `SELECT p.id AS source_id, p.path AS source_path, p.title AS source_title, l.target_path, l.syntax, l.fragment, l.line, l.context
-       ${from}
-      ORDER BY l.target_path, p.path, l.line, l.id
-      LIMIT ${limit} OFFSET ${offset}`,
-    listParams,
+  let from = `FROM page_links l JOIN pages_index p ON p.id = l.source_page_id WHERE p.space_slug = $1 AND l.kind = 'unresolved' AND ${visible}`;
+  let targetPath = 'l.target_path';
+  let ctes = '';
+  if (viewer.kind === 'user') {
+    const catalog = sqlParam(params, JSON.stringify(spaceWikilinkCatalog(space, viewer) ?? {}));
+    const targetVisible = visiblePagesSql('p', viewer, params);
+    const refs = "SELECT DISTINCT link_path FROM candidates WHERE kind = 'unresolved' AND syntax = 'wikilink' AND strpos(link_path, '/') > 0";
+    ctes = `WITH candidates AS (
+      SELECT l.*, p.path AS source_path, p.title AS source_title, catalog.route
+        FROM page_links l JOIN pages_index p ON p.id = l.source_page_id
+        CROSS JOIN LATERAL (SELECT CASE WHEN l.syntax IN ('wikilink', 'embed', 'md')
+          THEN ${catalog}::jsonb -> p.path -> l.link_path END AS route) catalog
+       WHERE p.space_slug = $1 AND ${visible} AND (l.kind = 'unresolved' OR catalog.route IS NOT NULL)
+    ), repo_targets AS (${repositoryWikilinkMatches(refs, targetVisible)}), mapped_targets AS (
+      SELECT DISTINCT c.route FROM candidates c
+        JOIN pages_index p ON p.space_slug = c.route->>0 AND p.path = c.route->>1 AND p.kind = 'doc'
+        JOIN spaces dst ON dst.slug = p.space_slug
+        JOIN spaces src ON src.slug = $1 AND src.repo_url <> '' AND src.repo_url = dst.repo_url
+       WHERE ${targetVisible}
+    ) `;
+    from = `FROM candidates l
+      LEFT JOIN repo_targets r ON l.syntax = 'wikilink' AND l.link_path = r.written
+      LEFT JOIN mapped_targets m ON m.route = l.route
+      WHERE CASE WHEN l.route IS NOT NULL THEN m.route IS NULL ELSE r.written IS NULL END`;
+    // A missing catalog target is reported using the link as written, as on page metadata.
+    targetPath = `CASE WHEN l.route IS NULL THEN l.target_path
+                       WHEN l.syntax = 'md' OR l.link_path ~* '[.]mdx?$' THEN l.link_path ELSE l.link_path || '.md' END`;
+  }
+  const source = viewer.kind === 'user'
+    ? 'l.source_page_id AS source_id, l.source_path, l.source_title'
+    : 'p.id AS source_id, p.path AS source_path, p.title AS source_title';
+  const limit = sqlParam(params, page.limit);
+  const offset = sqlParam(params, page.offset);
+  const result = await queryOne<UnresolvedLinksResponse>(
+    `${ctes ? ctes + ',' : 'WITH'} unresolved AS (
+       SELECT ${source}, ${targetPath} AS target_path, l.syntax, l.fragment, l.line, l.context, l.id ${from}
+     ) SELECT (SELECT count(*)::int FROM unresolved) AS total,
+       COALESCE((SELECT json_agg(item) FROM (
+         SELECT source_id AS "sourceId", source_path AS "sourcePath", source_title AS "sourceTitle",
+                target_path AS "targetPath", syntax, fragment, line, context
+           FROM unresolved ORDER BY target_path, source_path, line, id LIMIT ${limit} OFFSET ${offset}
+       ) item), '[]'::json) AS links`,
+    params,
   );
-  return {
-    links: rows.map((r) => ({
-      sourceId: r.source_id,
-      sourcePath: r.source_path,
-      sourceTitle: r.source_title,
-      targetPath: r.target_path,
-      syntax: r.syntax,
-      fragment: r.fragment,
-      line: r.line,
-      context: r.context,
-    })),
-    total: total?.n ?? 0,
-  };
+  return result!;
 }
 
 /**

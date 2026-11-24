@@ -10,11 +10,16 @@ const routes = z.record(z.string(), z.record(z.string(), z.record(z.string(), z.
 let cached: { file: string; routes: z.infer<typeof routes> } | undefined;
 
 /** An operator can preserve exact per-file routes when importing collections that span Git branches. */
-export async function applyWikilinkCatalog(source: { space: string; relPath: string }, links: PageLinkRef[], viewer: PageViewer) {
+export function spaceWikilinkCatalog(space: string, viewer: PageViewer) {
   const file = process.env.FOLIO_WIKILINK_CATALOG;
-  if (!file || viewer.kind !== 'user' || !links.length) return;
+  if (!file || viewer.kind !== 'user') return undefined;
   if (file !== cached?.file) cached = { file, routes: routes.parse(JSON.parse(readFileSync(file, 'utf8'))) };
-  const route = cached.routes[source.space]?.[source.relPath];
+  return cached.routes[space];
+}
+
+export async function applyWikilinkCatalog(source: { space: string; relPath: string }, links: PageLinkRef[], viewer: PageViewer) {
+  if (!links.length) return;
+  const route = spaceWikilinkCatalog(source.space, viewer)?.[source.relPath];
   if (!route) return;
 
   const mapped = links.filter(link =>
