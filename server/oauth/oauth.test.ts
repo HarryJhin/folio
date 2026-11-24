@@ -281,6 +281,28 @@ describe('full flow with the MCP SDK OAuth client', () => {
   });
 });
 
+describe('OAuth client interoperability', () => {
+  it('exchanges a PKCE code without repeating the registered redirect URI', async () => {
+    const { client_id } = await registerClient();
+    const { challenge, verifier } = pkce();
+    const code = await consentAndGetCode(client_id, challenge);
+    const result = await tokenRequest({ grant_type: 'authorization_code', client_id, code, code_verifier: verifier });
+    expect(result.status).toBe(200);
+  });
+
+  it('returns the registered client URI in registration metadata', async () => {
+    const client = await registerClient({ client_uri: 'https://example.com/connector' });
+    expect(client).toMatchObject({ client_uri: 'https://example.com/connector' });
+  });
+
+  it('requires the client display name in metadata documents', async () => {
+    const id = 'https://example.com/mcp-client.json';
+    __setClientMetadataFetcherForTests(async () => ({ client_id: id, redirect_uris: [REDIRECT] }));
+    const response = await fetch(authorizeUrl(id, pkce().challenge), { redirect: 'manual' });
+    expect(response.status).toBe(400);
+  });
+});
+
 describe('token endpoint: negative cases', () => {
   it('rejects a wrong PKCE verifier and does not burn the code', async () => {
     const { client_id } = await registerClient();
@@ -659,13 +681,13 @@ describe('Client ID Metadata Documents', () => {
       return fetch(authorizeUrl(CIMD_ID, pkce().challenge, { redirect_uri: 'https://chatgpt.com/cb' }), { headers: { cookie: alice.cookie }, redirect: 'manual' });
     };
     expect((await attempt({ client_id: 'https://other.example/x.json', redirect_uris: ['https://chatgpt.com/cb'] })).status).toBe(400); // client_id mismatch
-    expect((await attempt({ client_id: CIMD_ID, redirect_uris: ['https://chatgpt.com/cb'], client_secret: 's' })).status).toBe(400);
-    expect((await attempt({ client_id: CIMD_ID, redirect_uris: ['https://chatgpt.com/cb'], token_endpoint_auth_method: 'client_secret_basic' })).status).toBe(400);
-    expect((await attempt({ client_id: CIMD_ID, redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
-    expect((await attempt({ client_id: CIMD_ID, redirect_uris: [] })).status).toBe(400);
+    expect((await attempt({ client_id: CIMD_ID, client_name: 'Test client', redirect_uris: ['https://chatgpt.com/cb'], client_secret: 's' })).status).toBe(400);
+    expect((await attempt({ client_id: CIMD_ID, client_name: 'Test client', redirect_uris: ['https://chatgpt.com/cb'], token_endpoint_auth_method: 'client_secret_basic' })).status).toBe(400);
+    expect((await attempt({ client_id: CIMD_ID, client_name: 'Test client', redirect_uris: ['http://evil.example/cb'] })).status).toBe(400);
+    expect((await attempt({ client_id: CIMD_ID, client_name: 'Test client', redirect_uris: [] })).status).toBe(400);
     expect((await attempt('nope')).status).toBe(400);
     // And a redirect_uri the document does not list is refused even for a valid document.
-    expect((await (async () => { __setClientMetadataFetcherForTests(async () => ({ client_id: CIMD_ID, redirect_uris: ['https://chatgpt.com/cb'] })); await query(`DELETE FROM oauth_clients WHERE client_id = $1`, [CIMD_ID]); return fetch(authorizeUrl(CIMD_ID, pkce().challenge, { redirect_uri: 'https://evil.example/cb' }), { headers: { cookie: alice.cookie }, redirect: 'manual' }); })()).status).toBe(400);
+    expect((await (async () => { __setClientMetadataFetcherForTests(async () => ({ client_id: CIMD_ID, client_name: 'Test client', redirect_uris: ['https://chatgpt.com/cb'] })); await query(`DELETE FROM oauth_clients WHERE client_id = $1`, [CIMD_ID]); return fetch(authorizeUrl(CIMD_ID, pkce().challenge, { redirect_uri: 'https://evil.example/cb' }), { headers: { cookie: alice.cookie }, redirect: 'manual' }); })()).status).toBe(400);
   });
 
   it('the real fetcher refuses non-public hosts (SSRF): loopback name, private IP literal, cloud metadata address', async () => {
