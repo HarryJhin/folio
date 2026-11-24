@@ -27,6 +27,7 @@ import type {
 } from '../../shared/contracts.js';
 import { query, queryOne } from '../db/pool.js';
 import { sqlParam, visiblePagesSql, type PageViewer } from '../accessSql.js';
+import { applyWikilinkCatalog } from './wikilinkCatalog.js';
 import { APP_LINK_SHAPE, isWikiSyntax, unresolvedWikiPath } from './resolve.js';
 
 const ORDER_SENTINEL = Number.MAX_SAFE_INTEGER;
@@ -199,6 +200,7 @@ export async function getPageMetadata(page: { id: string; space: string; relPath
 
   const links = await getPageLinks(page.id, viewer);
   await resolveRepositoryWikilinks(page.space, links, viewer);
+  await applyWikilinkCatalog(page, links, viewer);
 
   const countParams: unknown[] = [page.id];
   const sourceVisible = visiblePagesSql('s', viewer, countParams, { excludeTemplates: true });

@@ -13,7 +13,7 @@
  * schema validation, tool naming) is correct, not re-testing service.ts's
  * own logic.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { setUpTestSchema, deleteTestSpace } from './db/testSchema.js';
@@ -646,6 +646,26 @@ describe('server/mcp.ts — search and fetch (ChatGPT deep research format; real
   });
 
   const parsed = (r: Awaited<ReturnType<typeof call>>) => JSON.parse(resultText(r)) as Record<string, any>;
+
+  it('discovers primary spaces by default, includes configured references on request and skips invisible spaces', async () => {
+    const browse = await authStore.createUser({ email: `browser-${stamp}@example.com`, name: 'Browser', passwordHash: 'x', isAdmin: false });
+    await authStore.setMembership(ownSpace, browse.id, 'viewer');
+    await authStore.setMembership(otherSpace, browse.id, 'viewer');
+    vi.stubEnv('FOLIO_PRIMARY_SPACES', `invisible,${ownSpace},${ownSpace}`);
+    vi.stubEnv('FOLIO_REFERENCE_SPACES', otherSpace);
+    try {
+      const list = async (user: User, includeAll = false) => {
+        const result = await call(user, 'list_spaces', { includeAll });
+        return (JSON.parse(resultText(result)) as { slug: string }[]).map(space => space.slug);
+      };
+      expect(await list(browse)).toEqual([ownSpace]);
+      expect(await list(browse, true)).toEqual([ownSpace, otherSpace]);
+      expect(await list(viewer, true)).toEqual([ownSpace]);
+      expect(await list(outsider)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   it('search returns { results: [{ id, title, url }] } as structuredContent and as a JSON string in content', async () => {
     const r = await call(editor, 'search', { query: marker });

@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Operators can order primary spaces for the switcher, home redirect and MCP discovery. Reference spaces remain accessible through explicit navigation. A server-side catalog can preserve exact per-file wiki links across branches of the same repository.
+
 - Signed-in readers can follow repository-root note links across folder-backed spaces on the same Git branch.
 
 ### Added

@@ -1000,6 +1000,7 @@
       "label": "Нова сторінка в корені простору"
     },
     "spaceSwitcher": {
+      "includeReference": "Показати також довідкові простори",
       "label": "Змінити простір",
       "searchLabel": "Пошук просторів",
       "searchPlaceholder": "Знайти простір…",

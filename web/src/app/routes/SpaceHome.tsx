@@ -37,6 +37,8 @@ export function SpaceHome() {
   const errorText = useApiErrorText();
   const { space = '' } = useParams<{ space: string }>();
 
+  const { data: spaceList } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
+  const currentSpace = spaceList?.spaces?.find(item => item.slug === space);
   const home = useQuery({
     queryKey: ['resolve', space, 'index.md'],
     queryFn: () => api.resolve(space, 'index.md'),
@@ -71,7 +73,7 @@ export function SpaceHome() {
     return (
       <FolderListing
         space={space}
-        title={space}
+        title={currentSpace?.name ?? space}
         entries={excludeTemplatesFolder(getTopLevelNodes(tree.data))}
       />
     );

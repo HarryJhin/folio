@@ -24,6 +24,9 @@ services:
       - '${FOLIO_BIND:-0.0.0.0}:${FOLIO_PORT:-4870}:4870'
     environment:
       NODE_ENV: production
+      FOLIO_DEFAULT_SPACE: ${FOLIO_DEFAULT_SPACE:-}
+      FOLIO_PRIMARY_SPACES: ${FOLIO_PRIMARY_SPACES:-}
+      FOLIO_REFERENCE_SPACES: ${FOLIO_REFERENCE_SPACES:-}
       PORT: '4870'
       DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD:-folio}@postgres:5432/folio
       REDIS_URL: redis://redis:6379

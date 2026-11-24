@@ -1,4 +1,7 @@
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setAccess } from '../pageAccess.js';
 import { userViewer } from '../accessSql.js';
 import * as users from '../auth/store.js';
@@ -48,4 +51,40 @@ it('resolves repository-root note paths only on the same branch, to exact files 
   expect(await target(owner)).toMatchObject({ kind: 'unresolved', targetPageId: null });
   await query('UPDATE spaces SET branch = $1, repo_url = $2 WHERE slug = $3', ['main', 'https://git.example.com/other.git', b]);
   expect(await target(owner)).toMatchObject({ kind: 'unresolved', targetPageId: null });
+});
+
+it('uses an explicit source-path route across branches, even with a visible local namesake, without revealing hidden destinations', async () => {
+  const owner = await users.createUser({ email: 'writer@example.com', name: 'Writer', passwordHash: 'x', isAdmin: false });
+  const reader = await users.createUser({ email: 'other@example.com', name: 'Reader', passwordHash: 'x', isAdmin: false });
+  const a = (await storage.createSpace('Collection', owner.id)).slug;
+  const b = (await storage.createSpace('Reference', owner.id)).slug;
+  spaces.push(a, b);
+  await users.setMembership(a, owner.id, 'admin');
+  await users.setMembership(b, owner.id, 'admin');
+  await users.setMembership(a, reader.id, 'viewer');
+  await query('UPDATE spaces SET repo_url = $1 WHERE slug = ANY($2)', ['https://git.example.com/docs.git', [a, b]]);
+  await query('UPDATE spaces SET branch = $1 WHERE slug = $2', ['collection', a]);
+  const source = await storage.createPage({ space: a, parentPath: '', title: 'Route test', kind: 'doc' });
+  await storage.createPage({ space: a, parentPath: '', title: 'Other', kind: 'doc' });
+  const actual = await storage.createPage({ space: b, parentPath: '', title: 'Destination', kind: 'doc' });
+  await storage.writeDocBody(source.id, '[[Other#Part|Open]]');
+  const entry = (await storage.getEntry(source.id))!;
+  const dir = await mkdtemp(join(tmpdir(), 'folio-link-routes-'));
+  try {
+    const file = join(dir, 'routes.json');
+    await writeFile(file, JSON.stringify({ [a]: { [entry.relPath]: { Other: [b, actual.path] } } }));
+    vi.stubEnv('FOLIO_WIKILINK_CATALOG', file);
+    const read = async (user: typeof owner) => (await getPageMetadata(entry, userViewer(user))).links[0];
+    expect(await read(owner)).toMatchObject({ kind: 'page', targetPageId: actual.id, targetSpace: b, fragment: 'Part', displayText: 'Open' });
+    expect(await read(reader)).toMatchObject({ kind: 'unresolved', targetPageId: null, targetPath: 'Other.md' });
+    await users.setMembership(b, reader.id, 'viewer');
+    expect(await read(reader)).toMatchObject({ targetPageId: actual.id });
+    await setAccess(owner, (await storage.getEntry(actual.id))!, 'restricted', []);
+    expect(await read(reader)).toMatchObject({ targetPageId: null, targetPath: 'Other.md' });
+    await query('UPDATE spaces SET repo_url = $1 WHERE slug = $2', ['https://git.example.com/elsewhere.git', b]);
+    expect(await read(owner)).toMatchObject({ targetPageId: null, targetPath: 'Other.md' });
+  } finally {
+    vi.unstubAllEnvs();
+    await rm(dir, { recursive: true, force: true });
+  }
 });

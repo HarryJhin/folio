@@ -76,6 +76,7 @@ function stub({ resolve, tree }: { resolve: () => Response; tree: () => Response
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
+      if (url === '/api/spaces') return Promise.resolve(jsonResponse({ spaces: [{ slug: 'repo-space', name: 'Team library' }] }));
       if (url.startsWith('/api/resolve')) return resolve();
       if (url.includes('/tree')) return tree();
       return jsonResponse({ error: 'not found' }, 404);
@@ -125,6 +126,7 @@ describe('SpaceHome', () => {
     });
     renderHome();
     await waitFor(() => expect(screen.getByText('Docs')).toBeTruthy());
+    expect(screen.getByRole('heading', { name: 'Team library' })).toBeTruthy();
     expect(screen.queryByTestId('page-content')).toBeNull();
     // The lie the bug report is about.
     expect(screen.queryByText(/Space "repo-space" not found/)).toBeNull();

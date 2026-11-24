@@ -42,6 +42,7 @@ import { z } from 'zod';
 import type { ApiTokenScope, PageMeta, SpaceRole, TableColumn, TableRow, User } from '../shared/contracts.js';
 import { tableColumnSchema, tableColumnTypeSchema, tableFilterRuleSchema, tableOptionSchema } from '../shared/contracts.js';
 import * as storage from './storage.js';
+import { spaceNavigation } from './spaceNavigation.js';
 import { resolveTextLanguage } from './serverText.js';
 import type { PageIndexEntry } from './storage.js';
 import * as collab from './collab.js';
@@ -598,8 +599,10 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string 
 
   server.registerTool(
     'list_spaces',
-    { annotations: READ_ONLY, outputSchema: outputSchemas.list_spaces, title: 'List spaces', description: 'Lists every space (wiki) the caller can see: slug, name, page count, and the caller’s own role in it.' },
-    async () => {
+    { annotations: READ_ONLY, outputSchema: outputSchemas.list_spaces, title: 'List spaces',
+      description: 'Lists accessible primary spaces in navigation order, or all accessible spaces when no primaries are configured for this caller.',
+      inputSchema: { includeAll: z.boolean().optional().describe('Include the accessible reference spaces after the primary spaces.') } },
+    async ({ includeAll }) => {
       const publicSpace = publicSpaceOf(actor);
       if (publicSpace !== undefined) {
         // Only the one published space, and only what its public site shows: no git remote, no asset mode, a page count of the public set.
@@ -608,10 +611,13 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string 
         return structuredResult(spaces, { spaces });
       }
       const memberships = await session.membershipsFor(actor.user);
-      const spaces = (await storage.listSpaces())
+      const visible = (await storage.listSpaces())
         .filter((s) => s.slug in memberships)
         // The scan-ignore list names folders of the repository: a settings detail for the space admin's UI, not for a token.
         .map((s) => ({ ...s, scanIgnore: undefined, myRole: memberships[s.slug] }));
+      const navigation = spaceNavigation(visible);
+      const end = includeAll ? navigation.navigationSpaceCount : navigation.primarySpaceCount ?? navigation.navigationSpaceCount;
+      const spaces = navigation.spaces.slice(0, end);
       return structuredResult(spaces, { spaces });
     },
   );

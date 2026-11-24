@@ -11,12 +11,7 @@
  * silently dropped.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { readLastSpace, rememberLastSpace } from './lastSpace';
-
-/** The same rule as in RootRedirect.tsx — kept tested separately from the React tree. */
-function pickTarget(spaces: { slug: string }[], remembered: string | null): string {
-  return remembered && spaces.some((space) => space.slug === remembered) ? remembered : spaces[0].slug;
-}
+import { chooseHomeSpace, hiddenRootTarget, readLastSpace, rememberLastSpace } from './lastSpace';
 
 afterEach(() => {
   localStorage.clear();
@@ -40,14 +35,25 @@ describe('choosing the target for RootRedirect', () => {
   const spaces = [{ slug: 'alpha' }, { slug: 'beta' }, { slug: 'fourth-space' }];
 
   it('leads to where the user was, not to the first one in the list', () => {
-    expect(pickTarget(spaces, 'fourth-space')).toBe('fourth-space');
+    expect(chooseHomeSpace(spaces, 'fourth-space')?.slug).toBe('fourth-space');
   });
 
   it('without a memory it behaves as before', () => {
-    expect(pickTarget(spaces, null)).toBe('alpha');
+    expect(chooseHomeSpace(spaces, null)?.slug).toBe('alpha');
   });
 
   it('a space that is not in the server response (access taken away / renamed) is ignored', () => {
-    expect(pickTarget(spaces, 'gone-space')).toBe('alpha');
+    expect(chooseHomeSpace(spaces, 'gone-space')?.slug).toBe('alpha');
   });
+});
+
+it('redirects a hidden bare home while keeping the curated reference and unauthorized slugs untouched', () => {
+  const data = {
+    spaces: ['first', 'default', 'ref', 'legacy'].map(slug => ({ slug, name: slug, pageCount: 0 })),
+    primarySpaceCount: 2, navigationSpaceCount: 3, defaultSpace: 'default',
+  };
+  expect(hiddenRootTarget(data, 'legacy', 'legacy')?.slug).toBe('default');
+  expect(hiddenRootTarget(data, 'legacy', 'first')?.slug).toBe('first');
+  expect(hiddenRootTarget(data, 'ref', null)).toBeUndefined();
+  expect(hiddenRootTarget(data, 'unavailable', null)).toBeUndefined();
 });

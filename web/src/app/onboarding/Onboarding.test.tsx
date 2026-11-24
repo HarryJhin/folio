@@ -37,12 +37,14 @@ interface Call {
 }
 
 interface StubOptions {
+  primarySpaceCount?: number;
+  defaultSpace?: string;
   spaces?: { slug: string; name: string; pageCount: number; myRole?: string }[];
   /** Fail the first N page creations with a 500. */
   failPages?: number;
 }
 
-function stubFetch({ spaces = [], failPages = 0 }: StubOptions = {}): Call[] {
+function stubFetch({ spaces = [], primarySpaceCount, defaultSpace, failPages = 0 }: StubOptions = {}): Call[] {
   const calls: Call[] = [];
   let pageFailures = failPages;
   vi.stubGlobal(
@@ -53,7 +55,7 @@ function stubFetch({ spaces = [], failPages = 0 }: StubOptions = {}): Call[] {
       calls.push({ url, method, body });
       const json = (payload: unknown, status = 200) =>
         Promise.resolve({ ok: status < 300, status, statusText: '', json: () => Promise.resolve(payload) });
-      if (method === 'GET' && url === '/api/spaces') return json({ spaces });
+      if (method === 'GET' && url === '/api/spaces') return json({ spaces, primarySpaceCount, defaultSpace });
       if (method === 'POST' && url === '/api/spaces') return json({ slug: 'team-wiki', name: body.name, pageCount: 0, myRole: 'admin' }, 201);
       if (method === 'POST' && url === '/api/pages') {
         if (pageFailures > 0) {
@@ -83,6 +85,7 @@ function renderAt(path: string, element: ReactNode) {
           <Routes>
             <Route path="/" element={path === '/' ? element : <Landed />} />
             <Route path="/welcome" element={element} />
+            <Route path="/s/:space" element={<Landed />} />
             <Route path="/s/:space/p/:id" element={<Landed />} />
           </Routes>
         </ToastProvider>
@@ -243,4 +246,16 @@ describe('Onboarding — the tour at /welcome, with spaces already there', () =>
     await waitFor(() => expect(screen.getByTestId('landed').textContent).toContain('/|'));
     expect(posts(calls)).toHaveLength(0);
   });
+});
+
+it('opens the configured primary space if a bookmark for the root remembers a reference space', async () => {
+  const spaces = ['first', 'second', 'archive'].map(slug => ({ slug, name: slug, pageCount: 1 }));
+  stubFetch({ spaces, primarySpaceCount: 2, defaultSpace: 'second' });
+  localStorage.setItem('folio:last-space', 'archive');
+  try {
+    renderAt('/', <RootRedirect />);
+    expect((await screen.findByTestId('landed')).textContent).toContain('/s/second|');
+  } finally {
+    localStorage.removeItem('folio:last-space');
+  }
 });
