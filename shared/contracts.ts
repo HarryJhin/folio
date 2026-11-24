@@ -619,7 +619,9 @@ export interface PageLinkRef {
   linkPath: string;
   targetPath: string;
   targetPageId: string | null;
-  /** Destination space of a resolved repository-root wikilink. */
+  /** The link has an explicit, source-specific Markdown route, including when its target is unavailable. */
+  mappedMarkdown?: true;
+  /** Destination space of a resolved repository or catalog link. */
   targetSpace?: string;
   syntax: LinkSyntax;
   kind: LinkKind;

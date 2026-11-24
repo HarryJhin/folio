@@ -46,6 +46,8 @@ export type WikilinkContext =
        * link target); undefined when the index has no resolved attachment for it - the caller keeps the path as written.
        */
       resolveAttachment?: (path: string) => string | undefined;
+      /** undefined when ordinary URL handling applies; null for an unavailable mapped destination. */
+      resolveMappedMarkdown?: (path: string) => { space: string; id: string } | null | undefined;
     }
   | { status: 'pending' }
   | { status: 'unavailable' };
@@ -86,9 +88,14 @@ export function attachmentLookupFromLinks(links: readonly PageLinkRef[]): (path:
 /** Looks the page's wikilinks up in its typed links. */
 export function wikilinkContextFromLinks(links: readonly PageLinkRef[]): WikilinkContext {
   const resolveAttachment = attachmentLookupFromLinks(links);
+  const markdown = new Map<string, { space: string; id: string } | null>();
   const exact = new Map<string, PageLinkRef>();
   const anyFragment = new Map<string, PageLinkRef>();
   for (const link of links) {
+    if (link.syntax === 'md' && link.mappedMarkdown) {
+      const target = link.targetSpace && link.targetPageId ? { space: link.targetSpace, id: link.targetPageId } : null;
+      markdown.set(decoded(link.linkPath), target);
+    }
     if (link.syntax !== 'wikilink' && link.syntax !== 'embed') continue;
     const embed = link.syntax === 'embed';
     const key = keyOf(embed, link.linkPath, link.fragment);
@@ -99,6 +106,7 @@ export function wikilinkContextFromLinks(links: readonly PageLinkRef[]): Wikilin
   return {
     status: 'ready',
     resolveAttachment,
+    resolveMappedMarkdown: path => markdown.get(decoded(path)),
     resolve: ({ path, fragment, embed }) => {
       const link = exact.get(keyOf(embed, path, fragment)) ?? anyFragment.get(keyOf(embed, path, null));
       if (!link) return undefined;
