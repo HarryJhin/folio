@@ -55,6 +55,7 @@ describe('Folio MCP over HTTP', () => {
       expect(result.content).toEqual([{ type: 'text', text: JSON.stringify(result.structuredContent, null, 2) }]);
       const prompt = await client.getPrompt({ name: 'release-notes' });
       expect(prompt.messages[0].content).toMatchObject({ type: 'text', text: expect.stringContaining('Summarize the changes.') });
+      await expect(client.getPrompt({ name: 'missing-prompt' })).rejects.toMatchObject({ code: -32602 });
       expect(client.getServerCapabilities()).toMatchObject({ tools: { listChanged: false }, prompts: { listChanged: false } });
       expect(client.getDiscoverResult()?.supportedVersions).toContain('2026-07-28');
     } finally {
@@ -119,6 +120,16 @@ describe('Folio MCP over HTTP', () => {
       vi.stubEnv('PUBLIC_URL', base);
       vi.stubEnv('FOLIO_MCP_ALLOWED_ORIGINS', '');
     }
+  });
+
+  it('returns the JSON-RPC parse error when the HTTP body is incomplete', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/mcp',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      payload: '{"jsonrpc":',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32700 } });
   });
 
   it('reports the supported revision, header mismatch and unknown method with their protocol errors', async () => {
