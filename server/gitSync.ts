@@ -503,7 +503,7 @@ export async function getPageHistory(pageId: string, max = 100): Promise<PageHis
   // rename detection may need to lazily fetch a historical blob from the
   // promisor remote, same as performSync's merge above — needs credentials.
   const askpass = (await hasSpaceToken(entry.space)) ? await ensureAskpassScript() : undefined;
-  return git.fileHistory(dir, relToRepo, max, askpass, entry.space);
+  return git.fileHistory(dir, relToRepo, max, askpass, entry.space, rootPath);
 }
 
 const SHA_PATTERN = /^[0-9a-f]{7,64}$/i;
@@ -514,6 +514,12 @@ export interface FilePageRevisionInfo {
   /** Lowercase extension with the dot: .pdf, .docx, .xlsx, .pptx. */
   ext: string;
   size: number;
+}
+
+function revisionPathInSpace(rootPath: string, repoPath: string): string {
+  if (!rootPath) return repoPath;
+  if (!repoPath.startsWith(rootPath + '/')) throw notFound('revision');
+  return repoPath.slice(rootPath.length + 1);
 }
 
 /** Where a file page's revision lives in the repo: its path then (renames followed) relative to the repo root. Throws 404 when `sha` is not in the page's history. */
@@ -528,7 +534,7 @@ async function locateFilePageRevision(pageId: string, sha: string) {
   const fullSha = (await git.pathAtRevisionSha(dir, toRepo(entry.relPath), sha, askpass, entry.space)) ?? null;
   if (!fullSha) throw notFound('revision');
   const repoPath = fullSha.path;
-  const relPath = rootPath && repoPath.startsWith(`${rootPath}/`) ? repoPath.slice(rootPath.length + 1) : repoPath;
+  const relPath = revisionPathInSpace(rootPath, repoPath);
   return { entry, dir, askpass, repoPath, relPath, sha: fullSha.sha };
 }
 
@@ -596,7 +602,9 @@ export async function getPageAtSha(pageId: string, sha: string): Promise<PageAtS
   let raw: string;
   try {
     const revision = await git.pathAtRevisionSha(dir, relToRepo, sha, askpass, entry.space);
-    raw = await git.showFileAt(dir, revision?.sha ?? sha, revision?.path ?? relToRepo, askpass, entry.space);
+    const repoPath = revision?.path ?? relToRepo;
+    revisionPathInSpace(rootPath, repoPath);
+    raw = await git.showFileAt(dir, revision?.sha ?? sha, repoPath, askpass, entry.space);
   } catch {
     throw notFound('revision');
   }
