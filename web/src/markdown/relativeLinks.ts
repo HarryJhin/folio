@@ -92,6 +92,14 @@ export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pa
         if (typeof href !== 'string' || !href) return;
 
         const authored = splitFragment(href);
+        // A signed-in reader's catalog can map a local name across spaces.
+        // Wait for that answer before exposing a clickable local destination.
+        if (wikilinks?.status === 'pending' && !shareToken && !pageUrl &&
+            authored.path && !isExternalUrl(href) && !node.properties.dataFolioNav) {
+          node.tagName = 'span';
+          delete node.properties.href;
+          return;
+        }
         const mapped = wikilinks?.status === 'ready' ? wikilinks.resolveMappedMarkdown?.(authored.path) : undefined;
         if (mapped !== undefined && !isExternalUrl(href)) {
           if (mapped) {

@@ -307,3 +307,15 @@ describe('<Markdown> table fit/scroll toggle', () => {
     expect(wrap.classList.contains('folio-table-wrap--fit')).toBe(false);
   });
 });
+
+it('resolves ordinary cross-space Markdown links before allowing a local navigation', async () => {
+  let finish!: (response: Response) => void;
+  const meta = new Promise<Response>(resolve => { finish = resolve; });
+  const request = vi.fn((input: string) => input.endsWith('/meta') ? meta : Promise.resolve(Response.json({ users: [], backlinks: [] })));
+  vi.stubGlobal('fetch', request);
+  const { container } = renderMarkdown('[Read](manual.md#intro)', { pageId: 'source-for-mapped-link' });
+  expect(container.querySelector('a[data-folio-link]')).toBeNull();
+  await waitFor(() => expect(request.mock.calls.some(([url]) => url.endsWith('/meta'))).toBe(true));
+  finish(Response.json({ links: [{ syntax: 'md', mappedMarkdown: true, kind: 'page', linkPath: 'manual.md', targetSpace: 'library', targetPageId: 'other-manual' }] }));
+  await waitFor(() => expect(container.querySelector('a[data-folio-nav]')?.getAttribute('href')).toBe('/s/library/p/other-manual#intro'));
+});
