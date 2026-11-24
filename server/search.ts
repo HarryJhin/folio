@@ -26,6 +26,7 @@
 import type { PageKind, SearchHit, SearchQueryAst } from '../shared/contracts.js';
 import { isEmptySearchQuery, parseSearchQuery } from '../shared/searchQuery.js';
 import { query } from './db/pool.js';
+import { globalSearchNavigation } from './searchNavigation.js';
 import { sqlParam, visiblePagesSql } from './accessSql.js';
 
 /**
@@ -165,24 +166,26 @@ function buildSearch(ast: SearchQueryAst, params: unknown[], publicReader: boole
   return {
     conditions,
     headlineQuery: positive ?? `''::tsquery`,
-    orderBy: positive ? `ORDER BY (${rank}) DESC, p.title, p.id` : 'ORDER BY p.updated_at DESC, p.title, p.id',
+    orderBy: positive ? `(${rank}) DESC, p.title, p.id` : 'p.updated_at DESC, p.title, p.id',
   };
 }
 
 // ts_headline's default StartSel/StopSel are <b>/</b> (its options string doesn't
 // accept an empty override in this PG version) — SearchHit.snippet is plain text.
-async function runSearch(ast: SearchQueryAst, window: SearchWindow, params: unknown[], publicReader: boolean, access: (params: unknown[]) => string): Promise<SearchHit[]> {
+async function runSearch(ast: SearchQueryAst, window: SearchWindow, params: unknown[], publicReader: boolean, access: (params: unknown[]) => string, global = false): Promise<SearchHit[]> {
   if (isEmptySearchQuery(ast)) return [];
   const built = buildSearch(ast, params, publicReader);
-  const visible = access(params);
+  const conditions = [...built.conditions, access(params)];
+  const navigation = global ? globalSearchNavigation(params, conditions) : undefined;
   const limit = sqlParam(params, clampSearchLimit(window.limit));
   const offset = sqlParam(params, clampSearchOffset(window.offset));
   const rows = await query<SearchRow>(
-    `SELECT p.id, p.space_slug AS space, p.path, p.title, p.kind,
+    `${navigation?.cte ?? ''}
+     SELECT p.id, p.space_slug AS space, p.path, p.title, p.kind,
             ts_headline('simple', coalesce(NULLIF(p.plain_text, ''), p.title), ${built.headlineQuery}, ${HEADLINE_OPTIONS}) AS snippet
-       FROM pages_index p
-      WHERE ${[...built.conditions, visible].join('\n        AND ')}
-      ${built.orderBy}
+       FROM ${navigation?.cte ? 'ranked' : 'pages_index'} p
+      WHERE ${navigation?.cte ? 'p.ref IS NOT NULL OR NOT p.has_topic' : conditions.join(' AND ')}
+      ORDER BY ${navigation?.order ?? ''}${built.orderBy}
       LIMIT ${limit} OFFSET ${offset}`,
     params,
   );
@@ -229,7 +232,7 @@ export async function searchPages(q: string, options: SearchOptions): Promise<Se
     const visible = visiblePagesSql('p', { kind: 'user', userId: options.userId, isInstanceAdmin: options.isInstanceAdmin ?? false }, p);
     if (options.space === undefined) return visible;
     return `${visible}\n        AND p.space_slug = ${sqlParam(p, options.space)}`;
-  });
+  }, options.space === undefined);
 }
 
 /**
