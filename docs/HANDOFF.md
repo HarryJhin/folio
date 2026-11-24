@@ -10,6 +10,10 @@ Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through ex
 
 Operators can curate primary and reference space navigation and supply exact wiki link routes for collections split across branches. The full space list and every resolved destination still use the viewer’s access rights. See [Installation](INSTALL.md#primary-space-navigation).
 
+OIDC token exchange selects the authentication method from the provider's discovery metadata and configured secret. SAML bearer confirmations use the configured ACS address, and SCIM responses honor requested attributes and sub-attributes. See [Installation](INSTALL.md#single-sign-on-openid-connect).
+
+The custom branch serves both MCP lifecycles and enforces browser origins. See [MCP and REST](MCP.md#connecting) for the HTTP and OAuth settings. Regression tests cover mixed REST/MCP edits, history across renames, typed trash restores and viewer-specific link resolution. Table exports share their structured serializer across the browser and server.
+
 ## What Folio is
 
 A team wiki whose content lives in Git. People write in the browser, together

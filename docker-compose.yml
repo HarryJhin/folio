@@ -30,6 +30,7 @@ services:
       PORT: '4870'
       DATABASE_URL: postgresql://folio:${POSTGRES_PASSWORD:-folio}@postgres:5432/folio
       REDIS_URL: redis://redis:6379
+      FOLIO_MCP_ALLOWED_ORIGINS: ${FOLIO_MCP_ALLOWED_ORIGINS:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:4870}
       ASSET_BACKEND: local
       # Left empty, a random secret is generated on first start and kept on
