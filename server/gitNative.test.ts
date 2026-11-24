@@ -206,6 +206,26 @@ describe('git-native spaces (round 3, real git + real PG)', () => {
     }
   });
 
+  it('previews the Git tree of an artifact revision as a bundle', async () => {
+    const space = await storage.createSpace('Bundle history', null);
+    try {
+      const repo = storage.getRepoDir(space.slug);
+      const bundle = 'chart.artifact';
+      await fs.mkdir(path.join(repo, bundle));
+      await fs.writeFile(path.join(repo, bundle, 'index.html'), '<p>Chart</p>');
+      await fs.writeFile(path.join(repo, bundle, 'artifact.yaml'), 'title: Chart\n');
+      await storage.scanSpace(space.slug);
+      await git.commitAll(repo, 'publish chart', { name: 'Tester', email: 'tester@example.test' });
+      const id = (await storage.getEntryIdByExactPath(space.slug, bundle))!;
+      const sha = await git.headSha(repo);
+      const revision = await gitSync.getPageAtSha(id, sha);
+      expect(revision.markdown).toContain('index.html');
+      expect(revision.markdown).toContain('artifact.yaml');
+    } finally {
+      await deleteTestSpace(space.slug);
+    }
+  });
+
   it('conflict detection: a diverged merge lands with markers and status=conflict, clearing once resolved', async () => {
     const bareDir = path.join(os.tmpdir(), `folio-test-bare-${Date.now()}.git`);
     const { execFile } = await import('node:child_process');
