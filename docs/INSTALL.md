@@ -271,7 +271,7 @@ A provider is set up in one of two ways:
 | `FOLIO_OIDC_SSO_JIT` | `true`: a person without an account gets one at first sign-in (no password, not an administrator). Otherwise only existing and invited people get in. |
 | `FOLIO_OIDC_SSO_JIT_SPACES` | Spaces a new account joins, for example `handbook:viewer,engineering:editor`. |
 | `FOLIO_OIDC_SSO_ENFORCE` | `true`: people in those domains cannot use a password at all. Instance administrators keep an emergency password sign-in at `<PUBLIC_URL>/login?local`; every such sign-in is written to the audit log. |
-| `FOLIO_OIDC_SSO_SCOPES` | Default `openid email profile`. |
+| `FOLIO_OIDC_SSO_SCOPES` | Default `openid email profile`. Folio always requests `openid` and removes duplicate scopes. |
 | `FOLIO_OIDC_SSO_GROUP_SYNC`, `_GROUP_SYNC_MODE`, `_GROUP_MAP`, `_GROUP_CREATE`, `_GROUP_ALLOW` | Group sync, see [Syncing groups](#syncing-groups-from-the-identity-provider). |
 | `FOLIO_OIDC_SSO_EMAIL_CLAIM`, `_NAME_CLAIM`, `_GROUPS_CLAIM` | Claim names, default `email`, `name`, `groups`. The groups claim feeds group sync, see [Syncing groups](#syncing-groups-from-the-identity-provider). |
 
@@ -819,6 +819,7 @@ also reach references. The optional `FOLIO_REFERENCE_SPACES` list limits which s
 appear as references. Without it, all other accessible spaces are references. A user with
 no visible primary space lands in an accessible reference. Direct links still follow
 the ordinary permission checks, including for files in spaces outside the navigation lists. A bookmarked bare root outside both lists returns to the preferred home when primary spaces are available.
+When reference navigation is fixed, creating a space opens its bookmarkable home at `/s/<slug>/home`. The configured switcher order is maintained.
 MCP `list_spaces` uses the same order and accepts `includeAll: true` to include references.
 
 Global member searches prioritize primary spaces and honor the reference list. Explicit

@@ -11,6 +11,12 @@ With ordered primary spaces configured, `list_spaces` defaults to the caller’s
 
 ## Connecting
 
+The HTTP endpoint supports the 2026-07-28 protocol (`server/discover`) and the
+2025-11-25 lifecycle (`initialize`). Send browser requests from the origin of
+`PUBLIC_URL`. For another browser-based client, add its exact origin to the
+comma-separated `FOLIO_MCP_ALLOWED_ORIGINS` setting. Command-line clients can
+omit the Origin header.
+
 Use a personal access token of the form `folio_pat_…` in the header
 `Authorization: Bearer <token>`. Create it in the interface: user menu →
 "API tokens". It is shown once and has the scope `read` or `write`.
@@ -93,6 +99,8 @@ What you get:
 - Access tokens last one hour and are renewed by a refresh token (30 days, rotated on every use). Folio stores only hashes of all of them.
 - To disconnect, open user menu → "API tokens" → "Connected apps" and remove the app. Its tokens stop working immediately. Disabling a user does the same.
 
+Code exchange requires the PKCE verifier. Clients may omit `redirect_uri` at the token endpoint. When supplied, it must equal the URI used to obtain the code.
+
 How it is built (for client authors):
 
 | What | Where |
@@ -103,6 +111,7 @@ How it is built (for client authors):
 | Client registration | Dynamic Client Registration `POST /oauth/register` (RFC 7591), or a Client ID Metadata Document (`client_id` is an `https://` URL) |
 | Authorization | `GET /oauth/authorize`, authorization code with PKCE, **S256 only** |
 | Tokens | `POST /oauth/token`: `authorization_code` and `refresh_token` (rotating; reusing an old refresh token revokes the connection) |
+| Additional consent | A write tool called with a read-only OAuth grant returns HTTP 403 with a Bearer `insufficient_scope` challenge. The client can request a new grant with `read write`. |
 | Revocation | `POST /oauth/revoke` (RFC 7009) |
 | Scopes | `read`, `write` |
 | Audience | the `resource` parameter (RFC 8707) must be `https://<host>/mcp`; tokens are bound to it |
