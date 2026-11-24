@@ -1124,12 +1124,22 @@ function pathIdFor(kind: IndexOnlyKind, space: string, relPath: string, attempt:
   return `${kind}-${createHash('sha1').update(seed).digest('hex').slice(0, 24)}`;
 }
 
+/** A deleted page still owns its id while it can be restored. */
+async function canAssignDerivedId(id: string, space: string, relPath: string): Promise<boolean> {
+  const row = await queryOne<{ available: boolean }>(
+    `SELECT COALESCE((SELECT space_slug = $2 AND path = $3 FROM pages_index WHERE id = $1),
+        NOT EXISTS (SELECT FROM trash_items WHERE space_slug = $2 AND
+          (page_id = $1 OR payload->'ids' @> jsonb_build_array(jsonb_build_object('pageId', $1::text))))) AS available`,
+    [id, space, relPath],
+  );
+  return row!.available;
+}
+
 /** Step 4: the path's deterministic id — unless another page already holds it (a page created here and moved away since), then the next one in the same sequence. */
 async function freePathId(kind: IndexOnlyKind, space: string, relPath: string): Promise<string> {
   for (let attempt = 0; ; attempt++) {
     const id = pathIdFor(kind, space, relPath, attempt);
-    const holder = await queryOne<{ space_slug: string; path: string }>('SELECT space_slug, path FROM pages_index WHERE id = $1', [id]);
-    if (!holder || (holder.space_slug === space && holder.path === relPath)) return id;
+    if (await canAssignDerivedId(id, space, relPath)) return id;
   }
 }
 
@@ -1189,8 +1199,7 @@ export function stableIdsEnabled(): boolean {
 async function freeStableId(space: string, relPath: string): Promise<string> {
   for (let attempt = 0; ; attempt++) {
     const id = stableUlid(space, relPath, attempt);
-    const holder = await queryOne<{ space_slug: string; path: string }>('SELECT space_slug, path FROM pages_index WHERE id = $1', [id]);
-    if (!holder || (holder.space_slug === space && holder.path === relPath)) return id;
+    if (await canAssignDerivedId(id, space, relPath)) return id;
   }
 }
 
@@ -2753,6 +2762,13 @@ export function relPathStem(relPath: string, kind: PageKind): string {
   return stripDocExt(base);
 }
 
+/** The directory used when creating a child of this page, including before the first child exists. */
+export function pageChildrenPath(entry: Pick<PageIndexEntry, 'kind' | 'dirPath' | 'relPath' | 'isIndex'>): string {
+  if (entry.isIndex) return entry.dirPath;
+  const stem = relPathStem(entry.relPath, entry.kind);
+  return entry.dirPath ? `${entry.dirPath}/${stem}` : stem;
+}
+
 /**
  * The children of one page, `depth` levels deep. Two page shapes have
  * children, and getTree models both of them as well:
@@ -2809,9 +2825,7 @@ export async function getSubtree(entry: PageIndexEntry, depth: number, allowedPa
 
   /** The directory whose contents are this page's children, if any. */
   function childDirOf(e: PageIndexEntry): string | undefined {
-    if (e.isIndex) return e.dirPath;
-    const stem = relPathStem(e.relPath, e.kind);
-    const candidate = e.dirPath ? `${e.dirPath}/${stem}` : stem;
+    const candidate = pageChildrenPath(e);
     return allDirs.has(candidate) ? candidate : undefined;
   }
 
@@ -3881,23 +3895,33 @@ export async function writeDocBodyIfChanged(
   overrideIcon?: string | null,
   overrideCover?: string | null,
 ): Promise<{ meta: PageMeta; written: boolean }> {
-  // The entry is read INSIDE the lock: Folio's keys merged below are the row as the last writer of this file left it.
-  return withDocFileLock(id, async () => {
-    const entry = await requireEntry(id);
-    if (entry.kind !== 'doc') throw badRequest('page is not a document');
-    const icon = resolveIconCoverOverride(overrideIcon, entry.icon);
-    const cover = resolveIconCoverOverride(overrideCover, entry.cover);
-    const raw = await fs.readFile(entry.absPath, 'utf8').catch(() => undefined);
-    const next = mergeFrontmatter(raw, { id: docFileId(entry.space, entry.id), order: entry.explicitOrder, status: entry.explicitStatus, icon, cover }, markdown);
-    if (raw !== undefined && sameDocText(next, raw)) return { meta: toPageMeta(entry), written: false };
-    await writeFileAtomic(entry.absPath, next);
-    if (icon !== entry.icon || cover !== entry.cover) {
-      await query('UPDATE pages_index SET icon = $2, cover = $3 WHERE id = $1', [id, icon ?? null, cover ?? null]);
-      entry.icon = icon;
-      entry.cover = cover;
-    }
-    return { meta: await patchEntryContent(entry, markdown), written: true };
-  });
+  return withDocFileLock(id, () => writeDocBodyLocked(id, markdown, overrideIcon, overrideCover));
+}
+
+/** Called only under withDocFileLock. Check the same bytes used for the replacement. */
+export async function writeDocBodyLocked(
+  id: string,
+  markdown: string,
+  overrideIcon?: string | null,
+  overrideCover?: string | null,
+  verifyBody?: (current: string) => void,
+): Promise<{ meta: PageMeta; written: boolean }> {
+  const entry = await requireEntry(id);
+  if (entry.kind !== 'doc') throw badRequest('page is not a document');
+  const icon = resolveIconCoverOverride(overrideIcon, entry.icon);
+  const cover = resolveIconCoverOverride(overrideCover, entry.cover);
+  const read = fs.readFile(entry.absPath, 'utf8');
+  const raw = verifyBody ? await read : await read.catch(() => undefined);
+  if (verifyBody) verifyBody(matter(raw!).content);
+  const next = mergeFrontmatter(raw, { id: docFileId(entry.space, entry.id), order: entry.explicitOrder, status: entry.explicitStatus, icon, cover }, markdown);
+  if (raw !== undefined && sameDocText(next, raw)) return { meta: toPageMeta(entry), written: false };
+  await writeFileAtomic(entry.absPath, next);
+  if (icon !== entry.icon || cover !== entry.cover) {
+    await query('UPDATE pages_index SET icon = $2, cover = $3 WHERE id = $1', [id, icon ?? null, cover ?? null]);
+    entry.icon = icon;
+    entry.cover = cover;
+  }
+  return { meta: await patchEntryContent(entry, markdown), written: true };
 }
 
 /**
@@ -4336,13 +4360,18 @@ export async function writeFormDoc(
 export async function healFormTablePath(id: string, freshTableRelPath: string): Promise<void> {
   const entry = await requireEntry(id);
   if (entry.kind !== 'form') return;
-  await withDocFileLock(id, async () => {
-    const prev = await fs.readFile(entry.absPath, 'utf8');
-    const current = parseFormFile(prev);
-    if (isFormParseError(current) || current.table === freshTableRelPath) return;
-    const next: FormDoc = { ...current, table: freshTableRelPath };
-    await fs.writeFile(entry.absPath, withTablePageFields(serializeFormFile(next), entry.explicitOrder, entry.icon, prev), 'utf8');
-  });
+  await withDocFileLock(id, () => remapFormTableFile(entry.absPath, () => freshTableRelPath));
+}
+
+/** Update just the stored table path, preserving the form's other front matter and any unparseable file. */
+export async function remapFormTableFile(abs: string, mapPath: (oldPath: string) => string | undefined): Promise<void> {
+  const raw = await fs.readFile(abs, 'utf8');
+  const form = parseFormFile(raw);
+  if (isFormParseError(form)) return;
+  const mapped = mapPath(form.table);
+  if (mapped && mapped !== form.table) {
+    await writeFileAtomic(abs, writeFrontmatterKeys(raw, new Map([['table', { set: mapped }]])));
+  }
 }
 
 /** setBoardTitle/renameTableFile's FORM twin — a form's title is a frontmatter field, not an H1, so renaming it is a plain frontmatter rewrite. */
@@ -4553,7 +4582,7 @@ function guardNoSelfNesting(srcDirAbs: string, destParentDirAbs: string): void {
  * has) and true for every other file swept along in a subtree copy, so
  * siblings keep their relative order.
  */
-async function rewritePageFileId(space: string, abs: string, kind: PageKind, newId: string, opts: { keepOrder: boolean; overrideContent?: string }): Promise<void> {
+export async function rewritePageFileId(space: string, abs: string, kind: PageKind, newId: string, opts: { keepOrder: boolean; overrideContent?: string }): Promise<void> {
   if (kind === 'doc') {
     const raw = opts.overrideContent ?? (await fs.readFile(abs, 'utf8'));
     const parsed = matter(raw);
@@ -5354,14 +5383,15 @@ export function intersectAccessRules(levels: readonly PageAccessRule[]): PageAcc
 export interface TrashPagePayload {
   v: 1;
   access?: TrashAccessEntry[];
-  /** Light-footprint spaces: the pages the item took along whose id lives only in pages_index (see "Index-only page ids") — claimed back at their restored paths. */
+  /** Page identities reserved while the item can be restored. Index-only ids are claimed back at the restored paths. */
   ids?: TrashIdEntry[];
   /** The property sidecars (propsSidecar.ts) of the boards / files the item took along: page path at deletion time + the file's text — written back at the restored paths. */
   props?: Array<{ path: string; content: string }>;
 }
 
-/** One page of a trash item whose id is not stored in its file, with its space-relative path at deletion time. */
+/** A reserved identity with its space-relative path at deletion. Older snapshots contain only index-only ids. */
 export interface TrashIdEntry {
+  embeddedKind?: PageKind;
   pageId: string;
   relPath: string;
 }
@@ -5533,22 +5563,17 @@ async function countTrashChildren(space: string, dirPath: string | null, selfInc
   return selfIncluded ? Math.max(0, inSubtree - 1) : inSubtree;
 }
 
-/**
- * Light footprint: the doc/pdf/office pages a deletion takes away, with their
- * paths — their ids are not in the files, so the restore claims them back
- * (snapshotted, like access, before the rescan drops the rows). Other spaces:
- * nothing (a doc carries its id; pdf/office keep their single-page claim).
- */
-async function snapshotIndexOnlyIds(space: string, scope: { all: boolean; pageId?: string; dirPrefix?: string }): Promise<TrashIdEntry[]> {
-  if (!isLightFootprintSpace(space)) return [];
-  const rows = await query<{ id: string; path: string }>(
-    `SELECT id, path FROM pages_index
-      WHERE space_slug = $1 AND kind IN ('doc', 'pdf', 'office', 'canvas', 'base', 'artifact')
+/** Keep index-only identities across restores and reserve native identities when new pages receive deterministic ids. */
+async function snapshotTrashIds(space: string, scope: { all: boolean; pageId?: string; dirPrefix?: string }): Promise<TrashIdEntry[]> {
+  const indexOnly = "(kind IN ('pdf', 'office', 'canvas', 'base', 'artifact') OR ($5 AND kind = 'doc'))";
+  const rows = await query<{ id: string; path: string; kind: PageKind; index_only: boolean }>(
+    `SELECT id, path, kind, ${indexOnly} AS index_only FROM pages_index
+      WHERE space_slug = $1 AND (${indexOnly} OR $6)
         AND ($2::boolean OR id = $3 OR ($4::text IS NOT NULL AND substr(path, 1, length($4)) = $4))
       ORDER BY path`,
-    [space, scope.all, scope.pageId ?? null, scope.dirPrefix ?? null],
+    [space, scope.all, scope.pageId ?? null, scope.dirPrefix ?? null, isLightFootprintSpace(space), stableIdsEnabled()],
   );
-  return rows.map((row) => ({ pageId: row.id, relPath: row.path }));
+  return rows.map(row => ({ pageId: row.id, relPath: row.path, ...(row.index_only ? {} : { embeddedKind: row.kind }) }));
 }
 
 async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | null> {
@@ -5576,7 +5601,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
   const groupRoles = await query<{ group_id: string; role: string }>('SELECT group_id, role FROM space_group_roles WHERE space_slug = $1', [space]);
   // The `DELETE FROM spaces` below cascades to pages_index and, through it, to every page-access rule of the space.
   const access = await snapshotPageAccess(space, { all: true });
-  const ids = await snapshotIndexOnlyIds(space, { all: true });
+  const ids = await snapshotTrashIds(space, { all: true });
   return {
     v: 1,
     ...(access.length > 0 ? { access } : {}),
@@ -5605,7 +5630,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
 /** The trash payload of a deleted page (or folder): the access rules of the restricted pages it takes along, and (light footprint) the ids its files do not carry; null when there is neither. */
 async function pagePayload(space: string, pageId: string, dirPrefix: string | undefined): Promise<TrashPagePayload | null> {
   const access = await snapshotPageAccess(space, { all: false, pageId, dirPrefix });
-  const ids = await snapshotIndexOnlyIds(space, { all: false, pageId, dirPrefix });
+  const ids = await snapshotTrashIds(space, { all: false, pageId, dirPrefix });
   if (access.length === 0 && ids.length === 0) return null;
   return { v: 1, ...(access.length > 0 ? { access } : {}), ...(ids.length > 0 ? { ids } : {}) };
 }

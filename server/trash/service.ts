@@ -24,7 +24,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { PageKind, TrashItemInfo, TrashKind, TrashListResponse, TrashRestoreResponse, User } from '../../shared/contracts.js';
-import { officeFormat } from '../../shared/contracts.js';
+import { ulid } from 'ulidx';
 import * as storage from '../storage.js';
 import type { TrashPagePayload, TrashSpaceSnapshot } from '../storage.js';
 import * as store from '../auth/store.js';
@@ -269,21 +269,12 @@ export async function listTrash(actor: User, filters: TrashListFilters = {}): Pr
 // POST /api/trash/:id/restore
 // ---------------------------------------------------------------------------
 
-/** Page-file extensions, longest-suffix first — `.table.md` must be stripped whole before plain `.md` gets a chance (same trap storage.titleFallback documents). */
-const PAGE_EXTS = ['.table.md', '.excalidraw.svg', '.pdf', '.docx', '.xlsx', '.pptx', '.md', '.mdx', '.artifact'];
-
-function splitRelExt(rel: string): { base: string; ext: string } {
-  const lower = rel.toLowerCase();
-  for (const ext of PAGE_EXTS) {
-    if (lower.endsWith(ext)) return { base: rel.slice(0, rel.length - ext.length), ext: rel.slice(rel.length - ext.length) };
-  }
-  return { base: rel, ext: '' }; // directory (kind=folder), or an exotic backfilled file
-}
-
-/** `notes/plan.md` -> `notes/plan-restored.md`, then `notes/plan-restored-2.md`, ... (spec item 5: on conflict NEVER overwrite — restore alongside and tell the truth). */
-function suffixedRel(orig: string, n: number): string {
-  const { base, ext } = splitRelExt(orig);
-  return n === 1 ? `${base}-restored${ext}` : `${base}-restored-${n}${ext}`;
+/** Keep the whole format suffix (.form.md, .table.md, .base, etc.) when restoring alongside a namesake. */
+function suffixedRel(orig: string, kind: TrashKind, n: number): string {
+  const name = path.posix.basename(orig);
+  const stem = kind === 'folder' || kind === 'space' ? name : storage.relPathStem(orig, kind);
+  const suffix = n === 1 ? '-restored' : `-restored-${n}`;
+  return orig.slice(0, orig.length - name.length) + stem + suffix + name.slice(stem.length);
 }
 
 async function requireTrashContent(row: TrashRow): Promise<string> {
@@ -366,7 +357,7 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
       renamed = true;
       let n = 1;
       do {
-        destRel = suffixedRel(row.orig_path, n++);
+        destRel = suffixedRel(row.orig_path, row.kind, n++);
       } while (await destConflicts(spaceRoot, destRel));
     }
     const destAbs = path.join(spaceRoot, destRel);
@@ -374,16 +365,10 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
     // is now — BEFORE anything moves, so a failure here leaves the item in the
     // trash untouched. They are given to the pages in the same step that
     // indexes them (scanSpace's third argument), never afterwards.
-    const restoredAccess = await resolveRestoredAccess(row, space, actor, restoredPathMapper(row, destRel));
+    const mapPath = restoredPathMapper(row, destRel);
+    const restoredAccess = await resolveRestoredAccess(row, space, actor, mapPath);
+    const existing = await storage.getEntry(row.page_id);
     await fs.mkdir(path.dirname(destAbs), { recursive: true });
-    // A pdf/office file carries no id in its bytes (storage.ts "Binary page
-    // files") — pin the trashed page's id to where it lands so the rescan
-    // gives it back.
-    const lowerDest = destAbs.toLowerCase();
-    // An artifact bundle (a folder) carries no id either.
-    if (row.page_id && (lowerDest.endsWith('.pdf') || officeFormat(lowerDest) || row.kind === 'artifact')) storage.claimPageId(destAbs, row.page_id);
-    // Light footprint: the docs (and file pages) of the item carry no id either.
-    claimTrashedIds(row, spaceRoot, restoredPathMapper(row, destRel));
     await fs.rename(srcAbs, destAbs);
     if (srcChildDirAbs) {
       const destChildDirAbs = destChildDirAbsFor(destAbs, destRel);
@@ -397,15 +382,27 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
         throw err;
       }
     }
-    // The property sidecars the item took along (boards / files), at the restored paths — unless one is there already.
-    await restoreSidecars(row, spaceRoot, restoredPathMapper(row, destRel));
-    await storage.scanSpace(space, undefined, restoredAccess);
+    // Older versions could already have reused a trashed id. Leave the live
+    // namesake alone and give the restored file its own identity in that case.
+    await claimTrashedIds(row, space, spaceRoot, mapPath);
+    if (row.kind !== 'folder' && row.kind !== 'space') {
+      if (existing) await storage.rewritePageFileId(space, destAbs, row.kind, ulid(), { keepOrder: true });
+      else if (['pdf', 'office', 'canvas', 'base', 'artifact'].includes(row.kind)) storage.claimPageId(destAbs, row.page_id);
+    }
+    if (renamed && row.kind === 'form') await storage.remapFormTableFile(destAbs, mapPath);
+    await restoreSidecars(row, spaceRoot, mapPath);
+    // A current namesake can carry the old id, so identify restored access
+    // by the mapped destination paths of this item.
+    await storage.scanSpace(space, undefined, restoredAccess && { byId: new Map(), byPath: restoredAccess.byPath });
+    // Backfilled folders can contain pages without having an index page of their own.
+    const pageId = row.kind === 'folder' ? row.page_id : await storage.getEntryIdByExactPath(space, destRel);
+    if (!pageId) throw notFound('restored page');
     await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
     await cleanupEmptyTrashDirs(path.dirname(srcAbs));
     // page_id survives inside the file itself (frontmatter id / board's
     // folio-id comment) or, for a PDF, via the claim above, so old links and
     // live collab rooms — both keyed by id — keep working after the rescan.
-    return { restoredPath: destRel, pageId: row.page_id, space, renamed } satisfies TrashRestoreResponse;
+    return { restoredPath: destRel, pageId, space, renamed } satisfies TrashRestoreResponse;
   });
 
   // Round 29: a board's collab room, unlike a doc's or a table's, keeps
@@ -457,14 +454,23 @@ async function restoreSidecars(row: TrashRow, contentRootAbs: string, mapPath: (
   }
 }
 
-/** Claims back, at their restored paths, the ids a light-footprint trash item recorded (TrashPagePayload.ids). */
-function claimTrashedIds(row: TrashRow, contentRootAbs: string, mapPath: (oldRel: string) => string | undefined): void {
+/** Claim index-only identities and preserve existing live pages if an earlier release already reused their ids. */
+async function claimTrashedIds(row: TrashRow, space: string, contentRootAbs: string, mapPath: (oldRel: string) => string | undefined): Promise<void> {
   const ids = (row.payload as { ids?: unknown } | null)?.ids;
   if (!Array.isArray(ids)) return;
-  for (const item of ids as Array<{ pageId?: unknown; relPath?: unknown }>) {
+  const occupied = new Set((await query<{ id: string }>(
+    "SELECT id FROM pages_index WHERE id IN (SELECT value->>'pageId' FROM jsonb_array_elements($1::jsonb))", [JSON.stringify(ids)],
+  )).map(item => item.id));
+  for (const item of ids as Array<{ pageId?: unknown; relPath?: unknown; embeddedKind?: PageKind }>) {
     if (typeof item?.pageId !== 'string' || typeof item.relPath !== 'string') continue;
     const rel = mapPath(item.relPath);
-    if (rel) storage.claimPageId(path.join(contentRootAbs, ...rel.split('/')), item.pageId);
+    if (!rel || (row.kind !== 'space' && row.kind !== 'folder' && item.relPath === row.orig_path && item.embeddedKind)) continue;
+    const abs = path.join(contentRootAbs, ...rel.split('/'));
+    if (item.embeddedKind) {
+      if (occupied.has(item.pageId)) await storage.rewritePageFileId(space, abs, item.embeddedKind, ulid(), { keepOrder: true });
+    } else if (!occupied.has(item.pageId)) {
+      storage.claimPageId(abs, item.pageId);
+    }
   }
 }
 
@@ -568,7 +574,7 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
     await storage.setSpaceRootPathCache(slug, rootPath, lightFootprint);
     await restorePublicSettings(slug, snapshot?.publicSettings);
     // Light footprint: page ids that lived only in the dropped index rows (paths are unchanged).
-    claimTrashedIds(row, contentRootAbsFor(slug), (oldRel) => oldRel);
+    await claimTrashedIds(row, slug, contentRootAbsFor(slug), (oldRel) => oldRel);
     for (const groupRole of snapshot?.groupRoles ?? []) {
       await query('INSERT INTO space_group_roles (space_slug, group_id, role) VALUES ($1,$2,$3) ON CONFLICT (space_slug, group_id) DO NOTHING', [
         slug,

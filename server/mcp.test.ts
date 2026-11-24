@@ -751,6 +751,12 @@ describe('server/mcp.ts — search and fetch (ChatGPT deep research format; real
     expect(resultText(denied)).toBe('page not found');
   });
 
+  it.each(['form', 'base'] as const)('resolves the child path of a nested %s', async kind => {
+    const page = await storage.createPage({ space: ownSpace, parentPath: 'nested', title: 'Data ' + kind, kind });
+    const result = await call(editor, 'resolve_folio_url', { url: `/s/${ownSpace}/p/${page.id}` });
+    expect(result.structuredContent).toMatchObject({ parentPathForChildren: page.path.replace(kind === 'base' ? /\.base$/ : /\.form\.md$/, '') });
+  });
+
   it('every read tool answers with structuredContent that matches its outputSchema (the client validates it) and keeps the JSON text', async () => {
     const check = async (name: string, args: Record<string, unknown>) => {
       const r = await call(editor, name, args);

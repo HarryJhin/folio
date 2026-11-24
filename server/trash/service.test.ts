@@ -11,7 +11,7 @@
  * belong to this run's spaces — pre-existing trash content on the machine
  * is never touched (repo rule: agents must not disturb the owner's data).
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { setUpTestSchema, deleteTestSpace } from '../db/testSchema.js';
@@ -298,6 +298,64 @@ describe('trash service (trash round, real fs + real PG)', () => {
   // -----------------------------------------------------------------------
   // path conflict -> -restored suffix, truthful response
   // -----------------------------------------------------------------------
+
+  it.each(['base', 'form'] as const)('restores a conflicting %s with its format, identity and children', async kind => {
+    const sp = await makeSpace('restore-' + kind);
+    const input = { space: sp.slug, parentPath: '', title: 'Collection', kind };
+    const old = await storage.createPage(input);
+    const stem = storage.relPathStem(old.path, kind);
+    const child = await storage.createPage({ space: sp.slug, parentPath: stem, kind: 'doc', title: 'Child' });
+    await storage.deletePage(old.id, admin.id);
+    const fresh = await storage.createPage(input);
+    const row = (await rowForPage(old.id))!;
+    const result = await restoreTrashItem(admin, row.id);
+    expect(result.restoredPath).toBe(old.path.replace(stem, stem + '-restored'));
+    expect(fresh.id).not.toBe(old.id);
+    expect(result.pageId).toBe(old.id);
+    expect(await storage.requireEntry(old.id)).toMatchObject({ kind, relPath: result.restoredPath });
+    expect(await storage.requireEntry(fresh.id)).toMatchObject({ kind, relPath: fresh.path });
+    expect((await storage.requireEntry(child.id)).relPath).toBe(stem + '-restored/child.md');
+    if (kind === 'form') {
+      const form = await storage.readFreshFormDoc(old.id);
+      expect(form.table).toBe('collection-restored/collection.table.md');
+      expect((await storage.readFreshFormDoc(fresh.id)).table).toBe('collection/collection.table.md');
+    }
+  });
+
+  it('reserves stable ids of the paired table while its form is in trash', async () => {
+    vi.stubEnv('FOLIO_STABLE_IDS', '1');
+    try {
+      const sp = await makeSpace('stable-form');
+      const input = { space: sp.slug, parentPath: '', title: 'Pair', kind: 'form' } as const;
+      const old = await storage.createPage(input);
+      const paired = (await storage.readFreshFormDoc(old.id)).table;
+      const oldTable = await storage.getEntryIdByExactPath(sp.slug, paired);
+      await storage.deletePage(old.id, admin.id);
+      const fresh = await storage.createPage(input);
+      const newTable = await storage.getEntryIdByExactPath(sp.slug, paired);
+      expect(newTable).not.toBe(oldTable);
+      const row = (await rowForPage(old.id))!;
+      await restoreTrashItem(admin, row.id);
+      expect((await storage.requireEntry(oldTable!)).relPath).toBe((await storage.readFreshFormDoc(old.id)).table);
+      expect((await storage.requireEntry(newTable!)).relPath).toBe((await storage.readFreshFormDoc(fresh.id)).table);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps a live namesake that already owns a legacy trash id', async () => {
+    const sp = await makeSpace('legacy-base');
+    const input = { space: sp.slug, parentPath: '', title: 'Legacy', kind: 'base' } as const;
+    const old = await storage.createPage(input);
+    await storage.deletePage(old.id, admin.id);
+    const row = (await rowForPage(old.id))!;
+    const fresh = await storage.createPage({ ...input, id: old.id });
+    expect(fresh.id).toBe(old.id);
+    const result = await restoreTrashItem(admin, row.id);
+    expect(result.pageId).not.toBe(fresh.id);
+    expect(await storage.requireEntry(result.pageId)).toMatchObject({ kind: 'base', relPath: result.restoredPath });
+    expect(await storage.requireEntry(fresh.id)).toMatchObject({ kind: 'base', relPath: fresh.path });
+  });
 
   it('path conflict: never overwrites — restores alongside as -restored / -restored-2 and reports the ACTUAL path', async () => {
     const sp = await makeSpace('conflict');

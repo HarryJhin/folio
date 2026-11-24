@@ -1278,9 +1278,7 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string;
       }
       const { entry, error } = await checkPageRole(actor, id, 'viewer');
       if (error || !entry) return errorResult(error ?? 'page not found');
-      const parentPathForChildren = entry.isIndex
-        ? entry.relPath.replace(/\/?(index|README)\.mdx?$/i, '')
-        : entry.relPath.replace(/\.(table\.md|excalidraw\.svg|pdf|docx|xlsx|pptx|mdx?)$/i, '');
+      const parentPathForChildren = storage.pageChildrenPath(entry);
       return structuredResult({ ...storage.toPageMeta(entry), parentPathForChildren, note: 'Work within this page unless the user says otherwise.' });
     },
   );
