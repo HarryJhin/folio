@@ -171,6 +171,13 @@ describe('single sign-on through SAML 2.0 (test IdP, real PG)', () => {
 
   // -------------------------------------------------------------------------
 
+  it('checks the signed bearer confirmation against its configured ACS', async () => {
+    const p = await provider();
+    const { authError, sessionCookie } = await signIn(p.slug, { acsUrl: acsUrl('previous-registration'), attributes: { email: 'recipient@acme.test' } });
+    expect(authError).toBe('exchange');
+    expect(sessionCookie).toBeUndefined();
+  });
+
   it('JIT: a signed assertion signs a new person in (Entra-style attributes), stores the raw groups, then finds them by NameID', async () => {
     const p = await provider({ jitDefaultSpaces: { [space]: 'editor' } });
     const out = await signIn(p.slug, {

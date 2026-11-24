@@ -100,6 +100,33 @@ describe('SCIM 2.0 provisioning (real PG, HTTP)', () => {
     await teardown();
   });
 
+  it('projects default attributes and subattributes for provisioned user and group resources', async () => {
+    const projectionProvider = await providers.createProvider({ slug: 'projection', displayName: 'Projection', issuer: 'https://projection.test', clientId: 'scim', allowedDomains: ['example.com'] });
+    const { token } = await generateToken(projectionProvider.id);
+    const email = 'projection@example.com';
+    const created = await scim('POST', '/Users?attributes=userName', token, { schemas: [USER], userName: email, displayName: 'Projection', emails: [{ value: email }] });
+    expect(created.body).toEqual({ schemas: [USER], id: expect.any(String), userName: email });
+    expect(created.headers.location).toContain(created.body.id);
+    const url = `/Users/${created.body.id}`;
+    const hidden = await scim('GET', `${url}?excludedAttributes=emails,displayName,id,schemas`, token);
+    expect(hidden.body).toMatchObject({ id: created.body.id, schemas: [USER], userName: email });
+    expect(hidden.body).not.toHaveProperty('emails');
+    expect(hidden.body).not.toHaveProperty('displayName');
+    const list = await scim('GET', `/Users?attributes=${USER}:EmAiLs.VaLuE`, token);
+    expect(list.body.Resources).toEqual([{ schemas: [USER], id: created.body.id, emails: [{ value: email }] }]);
+    const group = await scim('POST', '/Groups?attributes=members.value', token, { schemas: [GROUP], displayName: 'Projection group', members: [{ value: created.body.id }] });
+    const groups = await scim('GET', '/Groups?attributes=members.value', token);
+    expect(groups.body.Resources).toEqual([{ id: group.body.id, schemas: [GROUP], members: [{ value: created.body.id }] }]);
+    const memberChange = await scim('PATCH', `/Groups/${group.body.id}?attributes=members.value`, token, {
+      schemas: [PATCH_OP], Operations: [{ op: 'replace', path: 'members', value: [] }],
+    });
+    expect(memberChange.status).toBe(200);
+    expect(memberChange.body).toEqual({ id: group.body.id, schemas: [GROUP], members: [] });
+    const invalid = await scim('POST', '/Groups?attributes=members&excludedAttributes=id', token, { schemas: [GROUP], displayName: 'Invalid projection' });
+    expect(invalid.status).toBe(400);
+    expect((await scim('GET', '/Groups', token)).body.totalResults).toBe(1);
+  });
+
   describe('admin API: the token', () => {
     it('is generated once (hashed at rest), turns JIT off, and is audited', async () => {
       const created = await generateToken(okta.id);

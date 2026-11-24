@@ -293,15 +293,32 @@ export function mapSamlProfile(profile: Profile, provider: Pick<AuthProvider, 'c
 // One-time use of assertions
 // ---------------------------------------------------------------------------
 
-function latestNotOnOrAfter(assertion: Record<string, unknown> | undefined): number | null {
+interface SignedAssertion {
+  $?: { ID?: string };
+  Conditions?: Array<{ $?: { NotOnOrAfter?: string } }>;
+  Subject?: Array<{ SubjectConfirmation?: Array<{
+    $?: { Method?: string };
+    SubjectConfirmationData?: Array<{ $?: { Recipient?: string; InResponseTo?: string; NotBefore?: string; NotOnOrAfter?: string } }>;
+  }> }>;
+}
+
+function hasBearerConfirmation(assertion: SignedAssertion, acsUrl: string, requestId: string | undefined): boolean {
+  for (const subject of assertion.Subject ?? []) {
+    for (const confirmation of subject.SubjectConfirmation ?? []) {
+      if (confirmation.$?.Method !== 'urn:oasis:names:tc:SAML:2.0:cm:bearer') continue;
+      const data = confirmation.SubjectConfirmationData?.[0]?.$;
+      if (data?.Recipient !== acsUrl || data.InResponseTo !== requestId || data.NotBefore !== undefined || !data.NotOnOrAfter) continue;
+      if (Date.parse(data.NotOnOrAfter) > Date.now() - CLOCK_SKEW_MS) return true;
+    }
+  }
+  return false;
+}
+
+function latestNotOnOrAfter(a: SignedAssertion): number | null {
   const times: number[] = [];
   const push = (v: unknown) => {
     const t = typeof v === 'string' ? Date.parse(v) : NaN;
     if (!Number.isNaN(t)) times.push(t);
-  };
-  const a = assertion as {
-    Conditions?: Array<{ $?: { NotOnOrAfter?: string } }>;
-    Subject?: Array<{ SubjectConfirmation?: Array<{ SubjectConfirmationData?: Array<{ $?: { NotOnOrAfter?: string } }> }> }>;
   };
   for (const c of a?.Conditions ?? []) push(c.$?.NotOnOrAfter);
   for (const s of a?.Subject ?? []) for (const sc of s.SubjectConfirmation ?? []) for (const d of sc.SubjectConfirmationData ?? []) push(d.$?.NotOnOrAfter);
@@ -423,9 +440,12 @@ async function acsHandler(request: FastifyRequest, reply: FastifyReply, slug: st
     return refuseAudited('exchange', describeError(err));
   }
 
-  const assertion = (profile.getAssertion?.() as { Assertion?: Record<string, unknown> & { $?: { ID?: string } } } | undefined)?.Assertion;
+  const assertion = (profile.getAssertion?.() as { Assertion?: SignedAssertion } | undefined)?.Assertion;
   const assertionId = assertion?.$?.ID;
   if (!assertionId) return refuseAudited('exchange', 'the assertion has no ID');
+  if (!hasBearerConfirmation(assertion, samlSpFor(provider, requestOrigin(request)).acsUrl, usableFlow?.requestId)) {
+    return refuseAudited('exchange', 'the assertion has no valid bearer subject confirmation for this ACS and request');
+  }
   if (!(await consumeAssertionId(idp.entityId, assertionId, latestNotOnOrAfter(assertion)))) {
     return refuseAudited('replay', `assertion ${assertionId} was already used`);
   }

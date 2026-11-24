@@ -131,6 +131,8 @@ describe('AuthProvidersAdmin: SAML', () => {
     fireEvent.change(screen.getByLabelText('Slug (in the URL)'), { target: { value: 'kc' } });
     fireEvent.change(screen.getByLabelText('Issuer URL'), { target: { value: 'https://sso.example.com/realms/acme' } });
     fireEvent.change(screen.getByLabelText('Client ID'), { target: { value: 'folio' } });
+    expect(screen.queryByRole('combobox', { name: 'Token endpoint authentication' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'registration-secret' } });
     expect(screen.queryByLabelText('Match IdP groups to Folio groups')).toBeNull();
     fireEvent.click(screen.getByLabelText(/Sync groups at sign-in/));
     fireEvent.change(screen.getByLabelText('Match IdP groups to Folio groups'), { target: { value: 'mapping' } });
@@ -140,6 +142,7 @@ describe('AuthProvidersAdmin: SAML', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
     const [, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!;
+    expect(JSON.parse(String(init!.body)).clientSecret).toBe('registration-secret');
     expect(JSON.parse(String(init!.body)).groupSync).toEqual({ enabled: true, mode: 'mapping', mapping: { Engineering: 'eng' }, createMissing: true, allow: 'folio-' });
   });
 
