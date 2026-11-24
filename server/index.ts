@@ -188,6 +188,8 @@ async function main(): Promise<void> {
   // never block boot on it; server/db/redis.ts degrades every caller gracefully if it's down.
   getRedis();
 
+  // Install the authenticated MCP endpoint and its origin check before CORS handles preflight.
+  registerMcpRoutes(app);
   await app.register(fastifyCors, { origin: true, exposedHeaders: ['WWW-Authenticate'] });
   // Public demo (FOLIO_DEMO_MODE): a much smaller cap (FOLIO_DEMO_MAX_UPLOAD_MB, default 5).
   await app.register(fastifyMultipart, { limits: { fileSize: demoMaxUploadBytes() ?? 50 * 1024 * 1024 } });
@@ -270,16 +272,6 @@ async function main(): Promise<void> {
 
   // SCIM 2.0 provisioning (/scim/v2): its own bearer token per sign-in provider, outside the session scope.
   await registerScimRoutes(app);
-
-  // --- MCP (round 7): PAT Bearer ONLY, cookie sessions rejected ------------
-  // Registered outside the protected scope below (which accepts cookie OR
-  // PAT) — this mount does its own auth check instead of session.requireSession,
-  // since MCP must reject a cookie session even though requireSession would
-  // happily accept it. Stateless Streamable HTTP (no sessionIdGenerator): a
-  // fresh McpServer + transport per POST, matching the SDK's own reference
-  // implementation (dist/esm/examples/server/simpleStatelessStreamableHttp.js)
-  // — see server/mcp.ts's module doc comment for why not one shared instance.
-  registerMcpRoutes(app);
 
   // Codex runs: the CLI is a child process, so a run's tools are served to it over loopback HTTP, per run and token-bound
   // (server/assistant/codexRunMcp.ts). Outside the session scope on purpose: it must neither need nor accept a cookie.

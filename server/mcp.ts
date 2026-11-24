@@ -1,23 +1,6 @@
 /**
- * MCP server (round 7). Mounted at POST/GET/DELETE /mcp in index.ts, PAT
- * Bearer-only — cookie sessions never reach this (DEV-PLAN round 7: "auth —
- * PAT Bearer (cookies are not accepted)").
- *
- * buildFolioMcpServer(actor) builds a FRESH McpServer for every incoming
- * POST, closing its tools directly over that one request's already-
- * resolved actor — the same pattern the SDK's own stateless reference
- * example uses (dist/esm/examples/server/simpleStatelessStreamableHttp.js:
- * a new server + a new `StreamableHTTPServerTransport({ sessionIdGenerator:
- * undefined })` per request). The SDK also offers a `req.auth` ->
- * `extra.authInfo` threading mechanism for sharing ONE long-lived server
- * across many callers, but McpServer.connect()'s own doc comment says a
- * transport instance is owned by "the only user... going forward" — under
- * concurrent requests that would mean two overlapping connect() calls on
- * the same server object, which isn't a pattern documented or exercised
- * anywhere in the SDK's own examples. A fresh (cheap: just the tool
- * closures, no heavy resources) server per request sidesteps that risk
- * entirely and matches the reference implementation exactly, so that's what
- * this does.
+ * Folio's MCP catalog. Each server closes over one authenticated actor. The
+ * HTTP entry creates a fresh server for each legacy or modern request.
  *
  * Every tool enforces the SAME RBAC a REST caller hits — effectiveRole/
  * roleAtLeast, the same primitives auth/session.ts's requireSpaceRole/
@@ -36,8 +19,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { GetPromptRequestSchema, ListPromptsRequestSchema, type CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { ApiTokenScope, PageMeta, SpaceRole, TableColumn, TableRow, User } from '../shared/contracts.js';
 import { tableColumnSchema, tableColumnTypeSchema, tableFilterRuleSchema, tableOptionSchema } from '../shared/contracts.js';
@@ -243,12 +225,10 @@ function errorResult(message: string): CallToolResult {
 }
 
 /**
- * A successful tool answer: the JSON text `textResult` always produced (kept as is for clients that only read
- * `content`) plus the same data as `structuredContent`, which the tool's `outputSchema` validates. `structured`
- * differs from `value` only where the schema needs an object root and the text form is a bare array. The
- * JSON round trip makes the structured form exactly what a client would parse out of the text.
+ * The typed value is serialized as JSON on the wire. The text fallback can be the same object
+ * or its historical bare array / Markdown representation when serving a legacy client.
  */
-function structuredResult(value: unknown, structured: Record<string, unknown> = value as Record<string, unknown>): CallToolResult {
+function toolResult(value: unknown, structured: Record<string, unknown>): CallToolResult {
   return { content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }], structuredContent: JSON.parse(JSON.stringify(structured)) as Record<string, unknown> };
 }
 
@@ -588,9 +568,11 @@ function agentThread(thread: CommentThread, liveElements?: Set<string>, liveCell
   };
 }
 
-/** Built fresh per HTTP request by index.ts's /mcp mount, closing directly over that request's already-resolved actor (see the module doc comment for why not one shared instance). */
-export function buildFolioMcpServer(actor: McpActor, options: { origin?: string } = {}): McpServer {
-  const server = new McpServer({ name: 'folio', version: FOLIO_SERVER_VERSION }, { instructions: FOLIO_MCP_INSTRUCTIONS });
+/** Construct one actor's catalog for an HTTP exchange or an in-process connection. */
+export function buildFolioMcpServer(actor: McpActor, options: { origin?: string; era?: 'legacy' | 'modern' } = {}): McpServer {
+  const server = new McpServer({ name: 'folio', version: FOLIO_SERVER_VERSION }, { instructions: FOLIO_MCP_INSTRUCTIONS, capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } } });
+  const structuredResult = (value: unknown, structured = value as Record<string, unknown>): CallToolResult =>
+    toolResult(options.era === 'modern' ? structured : value, structured);
   const hasWriteScope = actor.scopes.includes('write');
   // Agent write mode (migration 062): in a review space the writes without a review path refuse; see mcpReviewGuard.ts.
   if (hasWriteScope) guardReviewMode(server);
@@ -2480,13 +2462,12 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string 
   // MCP prompts: one per skill, computed per request from the same list, so they follow the caller's rights and
   // new pages without a restart. Written with the low-level handlers because the McpServer helper registers a
   // fixed list when the server is built. Resources are deliberately not offered.
-  server.server.registerCapabilities({ prompts: { listChanged: false } });
-  server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  server.server.setRequestHandler('prompts/list', async () => {
     if (publicSpaceOf(actor) !== undefined) return { prompts: [] };
     const skills = await listTeamSkills(actor.user);
     return { prompts: skills.map((s) => ({ name: skillPromptName(s, skills), title: s.name, description: s.description || `Team skill "${s.name}"` })) };
   });
-  server.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  server.server.setRequestHandler('prompts/get', async (request) => {
     if (publicSpaceOf(actor) !== undefined) throw new Error(NOT_ON_PUBLIC_SITE);
     const skills = await listTeamSkills(actor.user);
     const found = findSkill(skills, request.params.name);

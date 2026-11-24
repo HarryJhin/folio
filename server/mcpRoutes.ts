@@ -8,7 +8,10 @@
  * (RFC 9728), which is what makes an MCP client start the OAuth flow by itself.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
+import { toNodeHandler } from '@modelcontextprotocol/node';
+import { publicUrlOrOrigin } from './publicUrl.js';
 import type { ApiTokenScope, User } from '../shared/contracts.js';
 import * as authStore from './auth/store.js';
 import * as session from './auth/session.js';
@@ -30,13 +33,13 @@ export interface McpAuth {
   scopes: ApiTokenScope[];
   /** PAT id, or the OAuth grant id. */
   tokenId: string;
+  oauth?: AuthInfo;
 }
 
 /** Resolves a PAT or an OAuth access token; null for anything else (no hint which part was wrong). */
 export async function resolveMcpAuth(request: FastifyRequest): Promise<McpAuth | null> {
-  const header = request.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  const token = header.slice('Bearer '.length).trim();
+  const token = session.extractBearerToken(request);
+  if (!token) return null;
 
   if (token.startsWith(oauthStore.ACCESS_TOKEN_PREFIX)) {
     const access = await oauthStore.resolveAccessToken(token);
@@ -45,7 +48,10 @@ export async function resolveMcpAuth(request: FastifyRequest): Promise<McpAuth |
     const user = await authStore.findUserById(access.userId);
     if (!user || user.disabled) return null;
     oauthStore.touchGrantLastUsed(access.grantId);
-    return { user, scopes: access.scopes, tokenId: access.grantId };
+    return {
+      user, scopes: access.scopes, tokenId: access.grantId,
+      oauth: { token, clientId: access.clientId, scopes: access.scopes, resource: new URL(access.resource), resourceMetadataUrl: protectedResourceMetadataUrl(request) },
+    };
   }
 
   const resolved = await session.resolvePatOnly(request);
@@ -72,7 +78,28 @@ function rateMessage(what: string, r: DemoLimitResult): string {
 /** Largest /mcp body outside the demo (was 1 MB): room for publish_artifact with its data inlined. Bigger bundles go through the web upload (50 MB). */
 const MCP_MAX_BODY_BYTES = 25 * 1024 * 1024;
 
+/** Register before CORS so it also guards OPTIONS requests handled by the CORS plugin. */
+async function guardMcpOrigin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (request.routeOptions.url !== '/mcp' && request.url.split('?', 1)[0] !== '/mcp') return;
+  const origin = request.headers.origin;
+  if (origin === undefined) return;
+  try {
+    const source = new URL(origin);
+    if (source.origin === origin && (source.protocol === 'https:' || source.protocol === 'http:')) {
+      const extra = (process.env.FOLIO_MCP_ALLOWED_ORIGINS ?? '').split(',').map((entry) => entry.trim());
+      if (extra.includes(origin)) return;
+      const publicUrl = publicUrlOrOrigin('');
+      const base = new URL(publicUrl || `${request.protocol}://${request.host}`);
+      // Only a loopback Host can supply a default origin for an unconfigured local instance.
+      const local = ['127.0.0.1', '[::1]', 'localhost'].includes(base.hostname);
+      if ((publicUrl || local) && origin === base.origin) return;
+    }
+  } catch { /* Malformed or opaque origins are refused. */ }
+  reply.status(403).send({ error: 'Origin is not allowed for MCP' });
+}
+
 export function registerMcpRoutes(app: FastifyInstance): void {
+  app.addHook('onRequest', guardMcpOrigin);
   // Public demo: refuse an oversized body from its Content-Length before it is read (the route's own bodyLimit covers chunked uploads).
   const refuseOversizedInDemo = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!isDemoMode()) return;
@@ -86,6 +113,25 @@ export function registerMcpRoutes(app: FastifyInstance): void {
   // publish_artifact carries a whole page (an artifact with its data inlined), so the cap is the artifact limit
   // outside the demo; the demo keeps its 1 MB (chunked bodies included).
   const bodyLimit = isDemoMode() ? DEMO_MCP_MAX_BODY_BYTES : MCP_MAX_BODY_BYTES;
+  const context = new AsyncLocalStorage<{ auth: McpAuth; origin: string }>();
+  const handler = createMcpHandler(({ era }) => {
+    const current = context.getStore();
+    if (!current) throw new Error('Missing authenticated MCP request');
+    const server = buildFolioMcpServer(current.auth, { origin: current.origin, era });
+    if (current.auth.oauth && !current.auth.scopes.includes('write')) {
+      const toolChallenge = server.resolveScopeChallenge;
+      server.resolveScopeChallenge = (context) => {
+        const { method, params } = context.request;
+        if (method === 'tools/call' && typeof params?.name === 'string' && MCP_WRITE_TOOL_NAMES.has(params.name)) {
+          return { scopes: ['read', 'write'] };
+        }
+        return toolChallenge(context);
+      };
+    }
+    return server;
+  }, { maxRequestBodySize: bodyLimit, onerror: (error) => app.log.error(error) });
+  const serve = toNodeHandler(handler, { maxRequestBodySize: bodyLimit, onerror: (error) => app.log.error(error) });
+  app.addHook('onClose', async () => handler.close());
   app.post('/mcp', { bodyLimit, onRequest: refuseOversizedInDemo }, async (request, reply) => {
     const auth = await resolveMcpAuth(request);
     if (!auth) {
@@ -103,26 +149,15 @@ export function registerMcpRoutes(app: FastifyInstance): void {
       if (writes.limited) return sendLimited(reply, 429, rateMessage('writes per hour', writes), body.id, writes.retryAfterSeconds);
     }
     reply.hijack();
-    const server = buildFolioMcpServer({ user: auth.user, scopes: auth.scopes, tokenId: auth.tokenId }, { origin: `${request.protocol}://${request.hostname}` });
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(request.raw, reply.raw, request.body);
-      reply.raw.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
-    } catch (err) {
-      app.log.error(err);
-      if (!reply.raw.headersSent) {
-        reply.raw.writeHead(500, { 'content-type': 'application/json' });
-        reply.raw.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32603, message: 'internal server error' }, id: null }));
-      }
+    // Fastify holds CORS headers until send(); the SDK owns the raw response after hijack().
+    for (const [name, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) reply.raw.setHeader(name, value);
     }
+    if (auth.oauth) Object.assign(request.raw, { auth: auth.oauth });
+    await context.run({ auth, origin: `${request.protocol}://${request.host}` }, () => serve(request.raw, reply.raw, request.body));
   });
-  // Stateless mode has no session to stream (GET) or terminate (DELETE) — same
-  // 405 the SDK's own stateless example returns for both.
-  for (const method of ['get', 'delete'] as const) {
+  // Only POST exchanges and CORS preflight are supported at the stateless endpoint.
+  for (const method of ['get', 'put', 'patch', 'delete'] as const) {
     app[method]('/mcp', async (request, reply) => {
       const auth = await resolveMcpAuth(request);
       if (!auth) {
@@ -133,7 +168,7 @@ export function registerMcpRoutes(app: FastifyInstance): void {
       }
       const rate = checkDemoMcpRate(auth.user.id, request.ip);
       if (rate.limited) return sendLimited(reply, 429, rateMessage('requests per minute', rate), null, rate.retryAfterSeconds);
-      reply.status(405).send({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
+      reply.header('Allow', 'POST, OPTIONS').status(405).send({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed.' }, id: null });
     });
   }
 }
