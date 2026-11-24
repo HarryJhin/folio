@@ -117,34 +117,31 @@ const WIKILINK_RETRY_MS = 1500;
 
 /**
  * The page's wikilinks, resolved through its metadata (wikilinks.ts). One
- * request per page, and none for a page that has no `[[` or where no session
- * exists (a share link, a history preview).
+ * request per page containing link syntax, using the caller's access scope.
  */
 function useWikilinkContext(pageId: string | undefined, publicSpace: string | undefined, shareToken: string | undefined, enabled: boolean, retry: number): WikilinkContext {
   const active = enabled && Boolean(pageId);
-  const [links, setLinks] = useState(() => (active && pageId ? cachedPageLinks(pageId, publicSpace, shareToken) : undefined));
-  const [failed, setFailed] = useState(false);
+  const key = JSON.stringify([pageId, publicSpace, shareToken]);
+  const [answer, setAnswer] = useState<{ key: string; context: WikilinkContext }>();
   useEffect(() => {
     if (!active || !pageId) return;
     let cancelled = false;
-    setFailed(false);
-    setLinks(cachedPageLinks(pageId, publicSpace, shareToken));
     fetchPageLinks(pageId, publicSpace, shareToken).then(
-      (next) => {
-        if (!cancelled) setLinks(next);
+      (links) => {
+        if (!cancelled) setAnswer({ key, context: wikilinkContextFromLinks(links) });
       },
       () => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) setAnswer({ key, context: WIKILINKS_UNAVAILABLE });
       },
     );
-    return () => {
-      cancelled = true;
-    };
-  }, [active, pageId, publicSpace, shareToken, retry]);
+    return () => { cancelled = true; };
+  }, [active, key, pageId, publicSpace, shareToken, retry]);
   return useMemo(() => {
-    if (!active || failed) return WIKILINKS_UNAVAILABLE;
-    return links ? wikilinkContextFromLinks(links) : WIKILINKS_PENDING;
-  }, [active, failed, links]);
+    if (!active || !pageId) return WIKILINKS_UNAVAILABLE;
+    if (answer?.key === key) return answer.context;
+    const cached = cachedPageLinks(pageId, publicSpace, shareToken);
+    return cached ? wikilinkContextFromLinks(cached) : WIKILINKS_PENDING;
+  }, [active, pageId, key, answer, publicSpace, shareToken]);
 }
 
 /** The element a `#fragment` of this page points at: a heading by its slug, a block by its id (`^id`, any case). */
@@ -213,9 +210,9 @@ export function Markdown({ markdown, space, pagePath, pageId, shareLinksPageId, 
   const [linksVersion, setLinksVersion] = useState(0);
   // Obsidian wikilinks: resolved through the page's metadata (wikilinks.ts); `wikilinkRetry` re-asks once or twice for a link the index had no row for yet.
   const [wikilinkRetry, setWikilinkRetry] = useState(0);
-  // An image or file link can be resolved by name too (`![](x.png)` -> `Attachments/x.png`), so a page with one asks as well.
-  const hasWikilinks = useMemo(() => markdown.includes('[[') || markdown.includes('!['), [markdown]);
-  const wikilinks = useWikilinkContext(shareToken ? shareLinksPageId : pageId, publicSite?.space, shareToken, hasWikilinks, wikilinkRetry);
+  // Wiki links, inline Markdown links and reference definitions may all use the page's index.
+  const hasLinks = markdown.includes('[[') || markdown.includes('![') || /\][(\[:]/.test(markdown);
+  const wikilinks = useWikilinkContext(shareToken ? shareLinksPageId : pageId, publicSite?.space, shareToken, hasLinks, wikilinkRetry);
   const [embedHosts, setEmbedHosts] = useState<EmbedHost[]>([]);
   // A click on a link to a page that does not exist: what it would create.
   const [offer, setOffer] = useState<{ name: string; target: WikilinkCreateTarget | null } | null>(null);

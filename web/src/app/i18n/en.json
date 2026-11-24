@@ -1120,6 +1120,7 @@
       "renameWarning": "Links to it in notes and canvases will be updated automatically"
     },
     "createSpace": {
+      "directLinkHint": "Bookmark the link after creating your space. The space switcher uses a fixed list.",
       "title": "New space",
       "creating": "Creating…",
       "tabEmpty": "Empty space",

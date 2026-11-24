@@ -179,6 +179,7 @@ function AuthenticatedRoutes() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/s/:space" element={<Shell />}>
           <Route index element={<SpaceHome />} />
+          <Route path="home" element={<SpaceHome />} />
           <Route path="p/:id" element={<PageView />} />
           <Route path="d/*" element={<FolderView />} />
           <Route

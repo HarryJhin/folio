@@ -12,7 +12,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import i18next from 'i18next';
 import { ToastProvider } from '../ui/Toast';
 import { CreateSpaceDialog } from './CreateSpaceDialog';
@@ -61,13 +61,17 @@ function stubApi(opts: { vault?: boolean } = {}) {
   return fetchMock;
 }
 
-function renderDialog() {
+function Pathname() { return <output>{useLocation().pathname}</output>; }
+
+function renderDialog(fixedNavigation = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (fixedNavigation) queryClient.setQueryData(['spaces'], { spaces: [], navigationSpaceCount: 0 });
   render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
         <MemoryRouter>
           <CreateSpaceDialog onClose={vi.fn()} />
+          <Pathname />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -274,4 +278,12 @@ describe('CreateSpaceDialog — Obsidian vault note and light footprint', () => 
     expect(light.checked).toBe(true);
     expect(light.disabled).toBe(true);
   });
+});
+
+it('gives the creator a bookmarkable home outside a fixed switcher', async () => {
+  stubApi();
+  renderDialog(true);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'New space' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('/s/new-space/home'));
 });
