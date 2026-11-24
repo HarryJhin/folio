@@ -20,6 +20,7 @@
 import path from 'node:path';
 import * as fsp from 'node:fs/promises';
 import { query } from './db/pool.js';
+import { isArtifactDirName } from './artifact/manifest.js';
 import { withSpaceLock } from './db/redis.js';
 import * as storageMod from './storage.js';
 import * as git from './git.js';
@@ -602,8 +603,15 @@ export async function getPageAtSha(pageId: string, sha: string): Promise<PageAtS
   let raw: string;
   try {
     const revision = await git.pathAtRevisionSha(dir, relToRepo, sha, askpass, entry.space);
-    const repoPath = revision?.path ?? relToRepo;
-    revisionPathInSpace(rootPath, repoPath);
+    let repoPath = revision?.path ?? relToRepo;
+    const historicalPath = revisionPathInSpace(rootPath, repoPath);
+    if (entry.kind === 'artifact' && revision) {
+      // --name-only reports the changed member; the artifact preview shows the bundle tree.
+      const parts = historicalPath.split('/');
+      const bundle = parts.findIndex(isArtifactDirName);
+      if (bundle === -1) throw notFound('revision');
+      repoPath = path.posix.join(rootPath, ...parts.slice(0, bundle + 1));
+    }
     raw = await git.showFileAt(dir, revision?.sha ?? sha, repoPath, askpass, entry.space);
   } catch {
     throw notFound('revision');
