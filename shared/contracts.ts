@@ -609,6 +609,8 @@ export interface PageLinkRef {
   linkPath: string;
   targetPath: string;
   targetPageId: string | null;
+  /** Destination space of a resolved repository-root wikilink. */
+  targetSpace?: string;
   syntax: LinkSyntax;
   kind: LinkKind;
   fragment: string | null;

@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Signed-in readers can follow repository-root note links across folder-backed spaces on the same Git branch.
+
 ### Added
 
 - Install Folio from a supported browser and save individual Markdown documents on a trusted device for read-only access after closing the app offline.

@@ -188,7 +188,7 @@ export function renderMarkdownToHtml(
     .use(rehypeOfmLinks, {
       space: options.space,
       wikilinks: options.wikilinks ?? WIKILINKS_UNAVAILABLE,
-      pageUrl: options.pageUrl ?? ((pageId: string) => `/s/${encodeURIComponent(options.space)}/p/${encodeURIComponent(pageId)}`),
+      pageUrl: options.pageUrl ?? ((pageId: string, targetSpace = options.space) => `/s/${encodeURIComponent(targetSpace)}/p/${encodeURIComponent(pageId)}`),
       embeds: options.embedsEnabled ?? false,
       tagsClickable: options.tagsClickable ?? false,
     })

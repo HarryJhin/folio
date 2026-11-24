@@ -327,6 +327,13 @@ saving the current state into a backup branch.
 
 ### Spaces inside a product repository
 
+In the signed-in reading view, an unresolved `[[folder/note|alias]]` may name an
+exact path in this repository and branch, including another space rooted at
+that folder. Page metadata resolves it only when one visible note matches,
+using the usual page ACL. Links keep their original Markdown; aliases and
+heading anchors stay intact. Public views, embeds, graphs and backlink indexes
+continue to use their space-local wikilink resolution.
+
 A space can be bound to a folder of a repository (a root path such as
 `docs/`), so documentation lives next to the code and other tools keep reading
 the same files.
