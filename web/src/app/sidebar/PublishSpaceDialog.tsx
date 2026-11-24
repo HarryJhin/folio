@@ -12,6 +12,7 @@ import {
   type SpaceVisibility,
 } from '@shared/contracts';
 import { api } from '../api';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useApiErrorText } from '../errorText';
 import { Modal } from '../ui/Modal';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
@@ -78,6 +79,7 @@ function sameSettings(a: SpacePublicSettings, b: SpacePublicSettings): boolean {
  */
 export function PublishSpaceDialog({ space, onClose }: PublishSpaceDialogProps) {
   const { t } = useTranslation('app');
+  const assistantEnabled = useAssistantEnabled();
   const errorText = useApiErrorText();
   const queryClient = useQueryClient();
   const showToast = useToast();
@@ -326,16 +328,18 @@ export function PublishSpaceDialog({ space, onClose }: PublishSpaceDialogProps) 
                   />
                   <span>{t('publish.site.allowDownload')}</span>
                 </label>
-                <label className="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
-                  <input
-                    type="checkbox"
-                    checked={allowAssistant}
-                    disabled={!isPublic}
-                    onChange={(e) => setAllowAssistant(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  <span>{t('publish.site.allowAssistant')}</span>
-                </label>
+                {assistantEnabled && (
+                  <label className="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    <input
+                      type="checkbox"
+                      checked={allowAssistant}
+                      disabled={!isPublic}
+                      onChange={(e) => setAllowAssistant(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>{t('publish.site.allowAssistant')}</span>
+                  </label>
+                )}
                 <label className="flex cursor-pointer items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
                   <input
                     type="checkbox"

@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18next from 'i18next';
+import { AssistantEnabledContext } from '../assistant/availability';
 import { WritingRulesButton } from './WritingRulesButton';
 import { writingRulesCheckMessage, writingRulesFixMessage, writingRulesLanguageName } from '../assistant/writingRulesPrompt';
 import '../i18n/register';
@@ -27,18 +28,25 @@ afterEach(() => {
   running = false;
 });
 
-function renderButton({ writingRules, keyConfigured }: { writingRules: boolean; keyConfigured: boolean }) {
+function renderButton({ writingRules, keyConfigured, assistantEnabled = true }: { writingRules: boolean; keyConfigured: boolean; assistantEnabled?: boolean }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   queryClient.setQueryData(['spaces'], { spaces: [{ slug: 'team', name: 'Team', agentRules: { used: true, pages: 1, ...(writingRules ? { writingRules: true } : {}) } }] });
   queryClient.setQueryData(['assistant', 'settings', 'team'], { apiKeyConfigured: keyConfigured, runtimeAvailable: true });
   render(
     <QueryClientProvider client={queryClient}>
-      <WritingRulesButton pageId="page-1" space="team" title="Launch plan" />
+      <AssistantEnabledContext.Provider value={assistantEnabled}>
+        <WritingRulesButton pageId="page-1" space="team" title="Launch plan" />
+      </AssistantEnabledContext.Provider>
     </QueryClientProvider>,
   );
 }
 
 describe('WritingRulesButton', () => {
+  it('omits the assistant action even when the space has rules and a usable key', () => {
+    renderButton({ writingRules: true, keyConfigured: true, assistantEnabled: false });
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('is not shown when the space has no writing rules', () => {
     renderButton({ writingRules: false, keyConfigured: true });
     expect(screen.queryByRole('button', { name: 'Check against writing rules' })).toBeNull();

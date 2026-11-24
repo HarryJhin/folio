@@ -109,7 +109,7 @@ import { assertDemoAgentRootIntact, assertNotDemo, assertNotDemoAccount } from '
 import * as authStore from './auth/store.js';
 import * as notificationsStore from './notifications/store.js';
 import { hashPassword } from './auth/passwords.js';
-import { ssoState } from './auth/routes.js';
+import { instanceAuthCapabilities } from './auth/routes.js';
 import { ssoRequired, toPublicProvider } from './auth/oidc.js';
 import * as authProviders from './auth/providers.js';
 import * as userGitCredentials from './userGitCredentials.js';
@@ -287,7 +287,7 @@ export function registerRoutes(app: FastifyInstance): void {
       needsSetup: false,
       user,
       memberships: await session.membershipsFor(user),
-      ...(await ssoState()),
+      ...(await instanceAuthCapabilities()),
     };
   });
 
@@ -2159,6 +2159,6 @@ export function registerPublicInviteRoutes(app: FastifyInstance): void {
     recordAudit(user.id, 'invite.accepted', claimed.id, { email });
 
     reply.status(201);
-    return { needsSetup: false, user, memberships: await session.membershipsFor(user), ...(await ssoState()) };
+    return { needsSetup: false, user, memberships: await session.membershipsFor(user), ...(await instanceAuthCapabilities()) };
   });
 }

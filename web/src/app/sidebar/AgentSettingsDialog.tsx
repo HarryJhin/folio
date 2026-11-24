@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useTranslation } from 'react-i18next';
 import type { AgentWriteMode } from '@shared/proposals';
 import { api } from '../api';
@@ -14,6 +15,7 @@ import '../i18n/register';
  */
 export function AgentSettingsDialog({ space, onClose }: { space: string; onClose: () => void }) {
   const { t } = useTranslation('app');
+  const assistantEnabled = useAssistantEnabled();
   const errorText = useApiErrorText();
   const queryClient = useQueryClient();
   const { data } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
@@ -61,7 +63,7 @@ export function AgentSettingsDialog({ space, onClose }: { space: string; onClose
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-xs leading-snug text-neutral-500 dark:text-neutral-400">{t('agentSettings.intro')}</p>
+        <p className="text-xs leading-snug text-neutral-500 dark:text-neutral-400">{t(assistantEnabled ? 'agentSettings.intro' : 'agentSettings.externalIntro')}</p>
         <fieldset className="flex flex-col gap-3">
           <legend className="sr-only">{t('agentSettings.title')}</legend>
           {option('direct')}

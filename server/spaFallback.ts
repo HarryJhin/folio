@@ -27,7 +27,7 @@ import type { FastifyStaticOptions } from '@fastify/static';
 // would take the HTML for the file. Same for `/llms.txt` and `/llms-full.txt` (publicLlms.ts).
 // `/sw.js`, `/manifest.webmanifest` and `/offline.html` are the PWA files: a missing service worker
 // answered with index.html and 200 can never be replaced or removed by the browser's update check.
-const NEVER_SPA_FALLBACK = ['/api/', '/files/', '/a/', '/art/', '/collab', '/assets/', '/robots.txt', '/sitemap.xml', '/llms.txt', '/llms-full.txt', '/sw.js', '/manifest.webmanifest', '/offline.html'];
+const NEVER_SPA_FALLBACK = ['/api/', '/internal/assistant-run/', '/files/', '/a/', '/art/', '/collab', '/assets/', '/robots.txt', '/sitemap.xml', '/llms.txt', '/llms-full.txt', '/sw.js', '/manifest.webmanifest', '/offline.html'];
 
 export function shouldServeSpaFallback(method: string | undefined, url: string): boolean {
   if (method !== 'GET') return false;

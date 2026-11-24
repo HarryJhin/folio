@@ -71,7 +71,7 @@ import {
   resolveProviderSecret,
 } from './providerRouting.js';
 import { verifyProviderKey } from './runtime/index.js';
-import { codexEnabled, providerEnabled } from './providerFlags.js';
+import { assistantDisabled, codexEnabled, providerEnabled } from './providerFlags.js';
 import { CodexBusyError } from './codexHome.js';
 import { CodexUnavailableError, cancelCodexLogin, checkCodexLogin, getCodexLoginState, startCodexLogin } from './codexLogin.js';
 import { codexAuthStore, saveCodexLogin } from './codexStore.js';
@@ -293,6 +293,7 @@ async function requireSpaceKeyAdmin(request: FastifyRequest, space: string): Pro
 }
 
 export function registerAssistantRoutes(app: FastifyInstance): void {
+  if (assistantDisabled()) return;
   app.get('/api/assistant/settings', async (request) => {
     session.requireCookieAuth(request);
     const user = request.authUser!;

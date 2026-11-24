@@ -40,7 +40,8 @@ import type {
   AssistantRunStep,
   User,
 } from '../../shared/contracts.js';
-import { conflict } from '../errors.js';
+import { conflict, notFound } from '../errors.js';
+import { assistantDisabled } from './providerFlags.js';
 import { query, queryOne } from '../db/pool.js';
 import * as assistantStore from './store.js';
 import type { AssistantConversationRow } from './store.js';
@@ -285,6 +286,7 @@ export interface StartRunInput {
  * guarantee for any other caller of the RunManager.
  */
 export async function startRun(input: StartRunInput): Promise<{ runId: string; conversationId: string }> {
+  if (assistantDisabled()) throw notFound('assistant');
   await authorizeAssistantNavigation(input.user, input);
   if (input.publicSpace && input.runMode !== 'ask') throw conflict('a public-site assistant run is Ask-only');
   const conversationId = input.conversation.id;

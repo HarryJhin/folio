@@ -17,6 +17,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import i18next from 'i18next';
 import { ToastProvider } from '../ui/Toast';
 import { RootRedirect } from '../routes/RootRedirect';
+import { AssistantEnabledContext } from '../assistant/availability';
 import { Onboarding } from './Onboarding';
 import '../i18n/register';
 
@@ -102,6 +103,23 @@ describe('Onboarding — a first run (no space yet)', () => {
     stubFetch();
     renderAt('/', <RootRedirect />);
     expect(await screen.findByRole('heading', { name: /What do you want to create first/ })).toBeTruthy();
+  });
+
+  it('finishes at the feature overview when the built-in assistant is disabled and still introduces MCP', async () => {
+    stubFetch();
+    renderAt('/', (
+      <AssistantEnabledContext.Provider value={false}>
+        <Onboarding />
+      </AssistantEnabledContext.Provider>
+    ));
+    await screen.findByRole('heading', { name: /What do you want to create first/ });
+    click('Continue');
+
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuemax')).toBe('2');
+    expect(screen.getByText(/An MCP endpoint with personal access tokens/)).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Meet Folio AI' })).toBeNull();
+    click('Create my first document');
+    await screen.findByTestId('landed');
   });
 
   it('walks choice -> features -> Folio AI, then creates the space and the chosen page and opens it', async () => {

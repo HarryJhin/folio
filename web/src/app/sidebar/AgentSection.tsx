@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useTranslation } from 'react-i18next';
 import { Bot, FileText, LayoutDashboard, Plus, SpellCheck, Table2 } from 'lucide-react';
 import { ChevronGlyph, RowIconBox, kindIconProps } from './PageGlyph';
@@ -47,6 +48,7 @@ const NO_CONFLICTS: Set<string> = new Set();
 
 export function AgentSection({ space, activeId, activeFolderPath }: AgentSectionProps) {
   const { t } = useTranslation('app');
+  const assistantEnabled = useAssistantEnabled();
   const errorText = useApiErrorText();
   const navigate = useNavigate();
   const showToast = useToast();
@@ -98,8 +100,8 @@ export function AgentSection({ space, activeId, activeFolderPath }: AgentSection
         // The name ".agent" by itself tells nobody anything (the owner, 17.09:
         // "it has to be clear what this is") — a hint on hover explains the
         // section, and expanded it also explains itself with the text below.
-        title={t('sidebar.agent.hint')}
-        aria-label={`${AGENT_FOLDER} — ${t('sidebar.agent.hint')}`}
+        title={t(assistantEnabled ? 'sidebar.agent.hint' : 'sidebar.agent.externalRules')}
+        aria-label={`${AGENT_FOLDER} — ${t(assistantEnabled ? 'sidebar.agent.hint' : 'sidebar.agent.externalRules')}`}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -154,14 +156,14 @@ export function AgentSection({ space, activeId, activeFolderPath }: AgentSection
 
       {open && (
         <div className="flex flex-col gap-0.5">
-          <p className="px-3 pb-1 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">{t('sidebar.agent.about')}</p>
+          <p className="px-3 pb-1 text-[11px] leading-snug text-neutral-400 dark:text-neutral-500">{t(assistantEnabled ? 'sidebar.agent.about' : 'sidebar.agent.externalRules')}</p>
           <AgentDemoNote className="px-3 pb-1" />
           {spacesData && !hasWritingRules && (
             <button
               type="button"
               onClick={() => createRules.mutate()}
               disabled={createRules.isPending}
-              title={t('sidebar.agent.createRulesHint')}
+              title={t(assistantEnabled ? 'sidebar.agent.createRulesHint' : 'sidebar.agent.externalCreateRulesHint')}
               className="mx-3 mb-1 flex items-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
             >
               <SpellCheck size={12} aria-hidden="true" />

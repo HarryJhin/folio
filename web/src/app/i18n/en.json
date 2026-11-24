@@ -1071,6 +1071,8 @@
       "hint": "Rules for this space’s AI assistant: added to the context of every request. Admins only.",
       "demoNote": "Shared demo: anyone can edit these rules; they reset daily.",
       "createRules": "Create writing rules",
+      "externalRules": "Manage this space’s writing rules for external MCP clients.",
+      "externalCreateRulesHint": "Creates .agent/writing-rules.md for the MCP tool check_page_writing_rules.",
       "createRulesHint": "Adds a starter page .agent/writing-rules.md. Pages are then checked against it (“Check against writing rules” in the page header, and the MCP tool check_page_writing_rules).",
       "createRulesFailed": "Could not create the writing rules"
     },
@@ -1826,6 +1828,7 @@
     "sidebarHint": "Edits made by AI agents wait here for an editor"
   },
   "agentSettings": {
+    "externalIntro": "Choose how edits from external MCP and API clients are saved in this space.",
     "title": "AI agents",
     "intro": "What happens when an AI agent (an external client over MCP or the API, or Folio AI) edits a page of this space.",
     "direct": {"label": "Edit at once", "hint": "The default. The agent's edit goes into the page right away, as a person's edit does."},

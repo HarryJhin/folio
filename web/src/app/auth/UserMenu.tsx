@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router';
+import { useAssistantEnabled } from '../assistant/availability';
 import { useTranslation } from 'react-i18next';
 import { Bot, Building2, ChartColumn, CircleHelp, Bug, Compass, GitBranch, HardDriveDownload, KeyRound, LogOut, MessageSquare, ScrollText, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import { useAuth } from './AuthProvider';
@@ -51,13 +52,14 @@ export function UserMenu({ space = '' }: UserMenuProps) {
     if (gitConnectResult) stripGitConnectParam();
   }, [gitConnectResult]);
   const [importOpen, setImportOpen] = useState(false);
+  const assistantEnabled = useAssistantEnabled();
   const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
   // Space admins (not instance admins, who always have it in the admin section below)
   // get the analytics of their own spaces. Asked once per session when the sidebar
   // mounts — not when the menu opens — so the item is already known by the time the
   // panel is measured and positioned (it would otherwise grow after placement).
-  const spaceAdminAccess = useAssistantAccess(!user.isAdmin);
-  const showSpaceAnalytics = !user.isAdmin && spaceAdminAccess.isSuccess;
+  const spaceAdminAccess = useAssistantAccess(assistantEnabled && !user.isAdmin);
+  const showSpaceAnalytics = assistantEnabled && !user.isAdmin && spaceAdminAccess.isSuccess;
 
   return (
     <div className="shrink-0 border-t border-neutral-200 p-2 dark:border-neutral-800">
@@ -123,15 +125,17 @@ export function UserMenu({ space = '' }: UserMenuProps) {
             >
               {t('git.credentials.title')}
             </MenuItem>
-            <MenuItem
-              icon={<Bot size={14} />}
-              onSelect={() => {
-                close();
-                setAssistantSettingsOpen(true);
-              }}
-            >
-              {t('assistant.menu.label')}
-            </MenuItem>
+            {assistantEnabled && (
+              <MenuItem
+                icon={<Bot size={14} />}
+                onSelect={() => {
+                  close();
+                  setAssistantSettingsOpen(true);
+                }}
+              >
+                {t('assistant.menu.label')}
+              </MenuItem>
+            )}
             {/* A space admin's analytics of their own spaces sits next to the other assistant
                 item rather than under an "Administration" heading of its own (the instance
                 admin's item lives in the admin section below). */}
@@ -170,7 +174,7 @@ export function UserMenu({ space = '' }: UserMenuProps) {
                 {t('auth.userMenu.spaces')}
               </MenuItem>
             )}
-            {user.isAdmin && (
+            {assistantEnabled && user.isAdmin && (
               <MenuItem
                 icon={<ChartColumn size={14} />}
                 onSelect={() => {
@@ -323,7 +327,7 @@ export function UserMenu({ space = '' }: UserMenuProps) {
         />
       )}
       {importOpen && <ConfluenceImportDialog currentSpace={space} onClose={() => setImportOpen(false)} />}
-      {assistantSettingsOpen && <AssistantSettingsModal space={space || null} onClose={() => setAssistantSettingsOpen(false)} />}
+      {assistantEnabled && assistantSettingsOpen && <AssistantSettingsModal space={space || null} onClose={() => setAssistantSettingsOpen(false)} />}
     </div>
   );
 }

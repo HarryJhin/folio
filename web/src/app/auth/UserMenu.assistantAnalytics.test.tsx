@@ -34,10 +34,10 @@ function jsonResponse(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) };
 }
 
-function stubApi(options: { isAdmin?: boolean; access: AdminAssistantAccess | 'forbidden' }) {
+function stubApi(options: { isAdmin?: boolean; assistantDisabled?: true; access: AdminAssistantAccess | 'forbidden' }) {
   const user: User = { ...USER, isAdmin: options.isAdmin ?? false };
   const fetchMock = vi.fn((url: string) => {
-    if (url === '/api/auth/state') return Promise.resolve(jsonResponse({ needsSetup: false, user, memberships: {} }));
+    if (url === '/api/auth/state') return Promise.resolve(jsonResponse({ needsSetup: false, user, memberships: {}, assistantDisabled: options.assistantDisabled }));
     if (url === '/api/me/stars') return Promise.resolve(jsonResponse({ spaces: [], pages: [], emojis: [] }));
     if (url === '/api/admin/assistant/access') {
       return Promise.resolve(options.access === 'forbidden' ? jsonResponse({ error: 'requires instance or space admin' }, 403) : jsonResponse(options.access));
@@ -80,6 +80,16 @@ describe('UserMenu: Assistant analytics item', () => {
     expect(await screen.findByRole('menuitem', { name: 'Assistant analytics' })).toBeTruthy();
     expect(screen.queryByText('Administration')).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Users' })).toBeNull();
+  });
+
+  it.each([true, false])('omits assistant actions and access checks when the instance disables them (admin=%s)', async (isAdmin) => {
+    const { accessCalls } = stubApi({ isAdmin, assistantDisabled: true, access: { scope: 'spaces', spaces: ['eng'] } });
+    renderMenu();
+    await openMenu();
+    expect(screen.queryByRole('menuitem', { name: 'Folio AI' })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: 'Assistant analytics' })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: 'API tokens' })).toBeTruthy();
+    expect(accessCalls()).toBe(0);
   });
 
   it('hides it when the access query is refused (403)', async () => {
