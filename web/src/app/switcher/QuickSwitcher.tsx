@@ -99,6 +99,7 @@ export function QuickSwitcher({ space, initialQuery = '', onClose }: QuickSwitch
   const showToast = useToast();
   const queryClient = useQueryClient();
   const role = useSpaceRole(space);
+  const { data: spaces } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
   const { theme, setTheme } = useSettings();
 
   const [query, setQuery] = useState(initialQuery);
@@ -316,7 +317,9 @@ export function QuickSwitcher({ space, initialQuery = '', onClose }: QuickSwitch
 
   const recentEntries = useMemo<Entry[]>(() => {
     const liveRecents = recentValidation.data ? recents.filter((r) => validRecentKeys.has(`${r.space}:${r.id}`)) : [];
-    const filtered = fuzzyFilter(query, liveRecents, (r) => r.title);
+    const discoverable = spaces?.navigationSpaceCount === undefined
+      ? liveRecents : liveRecents.filter(recent => spaces.spaces.slice(0, spaces.navigationSpaceCount).some(item => item.slug === recent.space));
+    const filtered = fuzzyFilter(query, discoverable, (r) => r.title);
     return filtered.map((page: RecentPage) => ({
       kind: 'recent' as const,
       key: `recent:${page.space}:${page.id}`,
@@ -324,7 +327,7 @@ export function QuickSwitcher({ space, initialQuery = '', onClose }: QuickSwitch
       icon: page.icon,
       go: () => go(`/s/${page.space}/p/${page.id}`),
     }));
-  }, [query, recents, recentValidation.data, validRecentKeys]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, recents, recentValidation.data, validRecentKeys, spaces]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hitEntries = useMemo<Entry[]>(() => {
     if (!hasQuery) return [];

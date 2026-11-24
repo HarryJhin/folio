@@ -820,6 +820,18 @@ no visible primary space lands in an accessible reference. Direct links still fo
 the ordinary permission checks, including for files in spaces outside the navigation lists. A bookmarked bare root outside both lists returns to the preferred home when primary spaces are available.
 MCP `list_spaces` uses the same order and accepts `includeAll: true` to include references.
 
+Global member searches prioritize primary spaces and honor the reference list. Explicit
+space-scoped searches use the requested space. If a reference contains copies of topic
+documents, set `FOLIO_SEARCH_MOUNTS` to the path of a mounted private JSON file.
+Each entry names a primary space and local folder, a reference space and its source
+folder. Paths are space-relative and an empty folder means the root. The longest
+local folder applies. A matching readable primary document takes precedence over
+the reference result for that same file in the same Git repository.
+
+```json
+[{"topic":"handbook","folder":"","ref":"reference","source":"guides/handbook"}]
+```
+
 To preserve imported wiki link routes, mount a private JSON file read-only in the app
 and set its container path in `FOLIO_WIKILINK_CATALOG` under the app's environment.
 The source and destination paths are relative to their own spaces. An exact catalog
