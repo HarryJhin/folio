@@ -11,6 +11,7 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -114,30 +115,32 @@ function mount(
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   act(() => {
     root.render(
-      <QueryClientProvider client={queryClient}>
-        <PageEditor
-          pageId="PAGE1"
-          space="eng"
-          pagePath="a/b.md"
-          title={props.title}
-          lightFootprint={props.lightFootprint}
-          collabUrl="ws://localhost/collab"
-          readOnly={props.readOnly}
-          defaultMode={props.mode}
-          underTitle={
-            props.slots === 'by-mode'
-              ? ({ mode, startEditing }) => (
-                  <button type="button" data-testid="under" onClick={startEditing}>
-                    Under in {mode}
-                  </button>
-                )
-              : props.slots
-                ? <div data-testid="under">Properties (2)</div>
-                : undefined
-          }
-          chromeStart={props.chromeStart ? <button type="button">Add a cover</button> : undefined}
-        />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <PageEditor
+            pageId="PAGE1"
+            space="eng"
+            pagePath="a/b.md"
+            title={props.title}
+            lightFootprint={props.lightFootprint}
+            collabUrl="ws://localhost/collab"
+            readOnly={props.readOnly}
+            defaultMode={props.mode}
+            underTitle={
+              props.slots === 'by-mode'
+                ? ({ mode, startEditing }) => (
+                    <button type="button" data-testid="under" onClick={startEditing}>
+                      Under in {mode}
+                    </button>
+                  )
+                : props.slots
+                  ? <div data-testid="under">Properties (2)</div>
+                  : undefined
+            }
+            chromeStart={props.chromeStart ? <button type="button">Add a cover</button> : undefined}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
   });
   return container;
