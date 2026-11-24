@@ -37,6 +37,8 @@
 import * as Y from 'yjs';
 import { tableColumnSchema, tableViewSchema } from '@shared/contracts';
 import type { TableCellValue, TableColumn, TableDoc, TableRow, TableView } from '@shared/contracts';
+import { pruneDanglingColumnRefs } from '@shared/tables/query';
+export { pruneDanglingColumnRefs };
 import type { TablePatch } from '../types';
 
 /**
@@ -216,23 +218,6 @@ function rowFromY(m: YMapAny, columns: readonly TableColumn[]): TableRow {
     }
   }
   return { id: String(m.get('id') ?? ''), values };
-}
-
-/** Drops a view's references to columns that no longer exist (mirrors the server; see its comment). */
-export function pruneDanglingColumnRefs(view: TableView, columnIds: ReadonlySet<string>): TableView {
-  const hidden = view.columns.hidden.filter((id) => columnIds.has(id));
-  const order = view.columns.order.filter((id) => columnIds.has(id));
-  const width = Object.fromEntries(Object.entries(view.columns.width).filter(([id]) => columnIds.has(id)));
-  const sort = view.sort.filter((s) => columnIds.has(s.column));
-  const rules = view.filter.rules.filter((rule) => columnIds.has(rule.column));
-  const unchanged =
-    hidden.length === view.columns.hidden.length &&
-    order.length === view.columns.order.length &&
-    Object.keys(width).length === Object.keys(view.columns.width).length &&
-    sort.length === view.sort.length &&
-    rules.length === view.filter.rules.length;
-  if (unchanged) return view;
-  return { ...view, columns: { hidden, order, width }, sort, filter: { ...view.filter, rules } };
 }
 
 /** The live Y.Doc as a plain TableDoc. THROWS on a structurally invalid doc — see useTableDoc, which turns that into a visible warning rather than a blank screen. */

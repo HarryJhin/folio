@@ -28,6 +28,7 @@ import {
   type TableRow,
   type TableView,
 } from '../contracts.js';
+import { pruneDanglingColumnRefs } from './query.js';
 import { uniqueTableRows, type TableParseError } from './codec.js';
 
 export interface TableYamlDoc {
@@ -59,12 +60,12 @@ const yamlDocSchema = z.object({
   rows: z.array(rowSchema),
 });
 
-export function tableExportDoc(doc: Pick<TableYamlDoc, 'meta' | 'views'>, columns: TableColumn[], rows: TableRow[]): TableYamlDoc {
+export function tableExportDoc(doc: Pick<TableYamlDoc, 'meta' | 'views' | 'columns'>, columns: TableColumn[], rows: TableRow[]): TableYamlDoc {
   const included = new Set(columns.map((column) => column.id));
   return {
     meta: doc.meta,
     columns,
-    views: doc.views,
+    views: columns.length === doc.columns.length ? doc.views : doc.views.map((view) => pruneDanglingColumnRefs(view, included)),
     rows: rows.map(({ id, values }) => ({
       id,
       values: Object.fromEntries(Object.entries(values).filter(([column]) => included.has(column))),

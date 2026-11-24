@@ -142,3 +142,11 @@ it('only writes visible cell values to the current-view JSON and YAML', () => {
     expect(text).not.toContain('hidden-value');
   }
 });
+
+it('omits filters on hidden columns from a view export while keeping them in the full backup', () => {
+  const view = { ...doc.views[0], filter: { op: 'and' as const, rules: [{ column: 'b', operator: 'is' as const, value: 'hidden filter' }] } };
+  const source = { ...doc, columns, views: [view] };
+  const exported = (cols: TableColumn[]) => JSON.parse(serializeExport('json', { doc: source, columns: cols, rows: [] }));
+  expect(exported(columns.slice(0, 1)).views[0].filter.rules).toEqual([]);
+  expect(exported(columns).views[0]).toEqual(view);
+});
