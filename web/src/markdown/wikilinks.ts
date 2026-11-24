@@ -17,7 +17,7 @@ import { extensionOf, fragmentInfo } from '@shared/ofm/wikilink';
 import { dirOf, resolveRelativePath } from './resolvePath';
 
 export type WikilinkResolution =
-  | { state: 'page'; pageId: string; fragmentResolved: boolean | null }
+  | { state: 'page'; pageId: string; targetSpace?: string; fragmentResolved: boolean | null }
   | { state: 'asset' }
   | { state: 'unresolved' };
 
@@ -105,7 +105,7 @@ export function wikilinkContextFromLinks(links: readonly PageLinkRef[]): Wikilin
       if (link.kind === 'page' && link.targetPageId) {
         // The row of the same link with ANOTHER fragment says nothing about this fragment: only an exact row does.
         const own = exact.get(keyOf(embed, path, fragment));
-        return { state: 'page', pageId: link.targetPageId, fragmentResolved: own ? own.fragmentResolved : null };
+        return { state: 'page', pageId: link.targetPageId, ...(link.targetSpace && { targetSpace: link.targetSpace }), fragmentResolved: own ? own.fragmentResolved : null };
       }
       if (link.kind === 'asset') return { state: 'asset' };
       return { state: 'unresolved' };

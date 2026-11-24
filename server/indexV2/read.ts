@@ -155,6 +155,41 @@ export async function getPageLinks(pageId: string, viewer: PageViewer): Promise<
   return links;
 }
 
+/** A repository may be split into several spaces by root_path. Complete unresolved note links at read time,
+ * when both the target branch and the actual reader's permissions are known. Public/share views remain space-local. */
+async function resolveRepositoryWikilinks(space: string, links: PageLinkRef[], viewer: PageViewer): Promise<void> {
+  if (viewer.kind !== 'user') return;
+  const unresolved = links.filter(l => l.kind === 'unresolved' && l.syntax === 'wikilink' && l.linkPath.includes('/'));
+  if (!unresolved.length) return;
+
+  const paths = [...new Set(unresolved.map(l => l.linkPath))];
+  const params: unknown[] = [space, paths];
+  const visible = visiblePagesSql('p', viewer, params);
+  const matches = await query<{ written: string; id: string; path: string; space_slug: string }>(
+    `SELECT written, min(p.id) AS id, min(p.path) AS path, min(p.space_slug) AS space_slug
+       FROM spaces src
+       JOIN spaces dst ON dst.repo_url = src.repo_url AND dst.branch = src.branch AND dst.root_path <> ''
+       CROSS JOIN unnest($2::text[]) AS refs(written)
+       CROSS JOIN LATERAL (SELECT substr(written, length(dst.root_path) + 2) AS rel) AS target
+       JOIN pages_index p ON p.space_slug = dst.slug AND p.kind = 'doc'
+                         AND p.path IN (target.rel, target.rel || '.md', target.rel || '.mdx')
+      WHERE src.slug = $1 AND src.repo_url <> ''
+        AND starts_with(written, dst.root_path || '/') AND ${visible}
+      GROUP BY written HAVING count(*) = 1`,
+    params,
+  );
+  const byPath = new Map(matches.map(m => [m.written, m]));
+  for (const link of unresolved) {
+    const match = byPath.get(link.linkPath);
+    if (match) {
+      link.kind = 'page';
+      link.targetPageId = match.id;
+      link.targetPath = match.path;
+      link.targetSpace = match.space_slug;
+    }
+  }
+}
+
 /** GET /api/pages/:id/meta and MCP get_page_metadata, for a page the caller may already read (the route checks). */
 export async function getPageMetadata(page: { id: string; space: string; relPath: string; title: string }, viewer: PageViewer): Promise<PageMetadata> {
   const row = await queryOne<{ frontmatter: Record<string, unknown> | null; meta_version: number }>('SELECT frontmatter, meta_version FROM pages_index WHERE id = $1', [page.id]);
@@ -163,6 +198,7 @@ export async function getPageMetadata(page: { id: string; space: string; relPath
   const tags = await query<PageTagRef>(`SELECT tag, source, line FROM page_tags WHERE page_id = $1 ORDER BY (source = 'body'), line NULLS FIRST, tag`, [page.id]);
 
   const links = await getPageLinks(page.id, viewer);
+  await resolveRepositoryWikilinks(page.space, links, viewer);
 
   const countParams: unknown[] = [page.id];
   const sourceVisible = visiblePagesSql('s', viewer, countParams, { excludeTemplates: true });

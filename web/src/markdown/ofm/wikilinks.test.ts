@@ -36,6 +36,13 @@ describe('reading: wikilinks', () => {
     expect(html).toContain('target="_blank"');
   });
 
+  it('keeps the alias and links into the resolved space for a repository-root note', () => {
+    const reference = link({ linkPath: 'library/manual', syntax: 'wikilink', kind: 'page', targetPageId: 'P4', targetSpace: 'docs' });
+    const html = render('[[library/manual#Part|Read this]]', ready([reference]));
+    expect(html).toContain('href="/s/docs/p/P4#part"');
+    expect(html).toContain('>Read this</a>');
+  });
+
   it('uses the public site URL for a page of a public site', () => {
     const html = render('[[Note#Some Heading]]', { ...ready(links), pageUrl: (id) => `/public/eng/p/${id}` });
     expect(html).toContain('data-folio-nav="/public/eng/p/P1#some-heading"');

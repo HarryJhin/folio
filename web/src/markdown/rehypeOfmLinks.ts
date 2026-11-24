@@ -28,7 +28,7 @@ export interface OfmLinksOptions {
   space: string;
   wikilinks: WikilinkContext;
   /** The in-app URL of one page; the public site passes its own. */
-  pageUrl: (pageId: string) => string;
+  pageUrl: (pageId: string, targetSpace?: string) => string;
   /** False where an embedded note cannot be fetched (a share link). */
   embeds: boolean;
   /** False where clicking a `#tag` has nowhere to go (a share link, a public site). */
@@ -104,7 +104,7 @@ export function rehypeOfmLinks({ wikilinks, pageUrl, embeds, tagsClickable }: Of
           node.properties.dataEmbedLabel = noteNameOf(path);
           return;
         }
-        const url = `${pageUrl(resolution.pageId)}${fragmentHash(fragment)}`;
+        const url = `${pageUrl(resolution.pageId, resolution.targetSpace)}${fragmentHash(fragment)}`;
         node.properties.href = url;
         node.properties.dataFolioNav = url;
         return;

@@ -53,6 +53,7 @@ const commentThreadOutput = z.looseObject({
 const pageList = (key: string, what: string) => ({ [key]: z.array(pageMetaOutput).describe(what) });
 
 const linkRefOutput = z.looseObject({
+  targetSpace: z.string().optional().describe('Space of a resolved repository-root note link'),
   targetPath: z.string().describe('What the link points at, relative to the space root'),
   targetPageId: z.string().nullable().describe('Id of the target page; null when it is not a page you can see'),
   syntax: z.string().describe('md, wikilink, embed, image, html or reference'),
