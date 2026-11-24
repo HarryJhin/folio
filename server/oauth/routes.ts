@@ -235,6 +235,7 @@ export async function registerOAuthRoutes(app: FastifyInstance, opts: OAuthRoute
         client_id: client.clientId,
         client_id_issued_at: Math.floor(Date.now() / 1000),
         client_name: client.clientName,
+        ...(client.clientUri && { client_uri: client.clientUri }),
         redirect_uris: client.redirectUris,
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],

@@ -3,7 +3,7 @@
  * endpoint (routes.ts) and Folio's own internal clients (the Slack and Teams link previews,
  * server/integrations/chat), which redeem their code in-process instead of calling themselves
  * over HTTP. One implementation, so the checks can never drift apart:
- *   - code, client, redirect_uri and the PKCE verifier must all match before anything else is said;
+ *   - code, client, PKCE verifier and any supplied redirect_uri must all match before anything else is said;
  *   - a replayed code (already used) revokes the grant it produced;
  *   - a disabled owner gets nothing.
  */
@@ -19,10 +19,10 @@ export type CodeExchangeOutcome =
 
 export async function exchangeAuthorizationCode(input: { clientId: string; code?: string; redirectUri?: string; codeVerifier?: string }): Promise<CodeExchangeOutcome> {
   const { clientId, code, redirectUri, codeVerifier } = input;
-  if (!code || !redirectUri || !codeVerifier) return { ok: false, error: 'invalid_request', description: 'code, redirect_uri and code_verifier are required' };
+  if (!code || !codeVerifier) return { ok: false, error: 'invalid_request', description: 'code and code_verifier are required' };
   if (!isValidCodeVerifier(codeVerifier)) return { ok: false, error: 'invalid_grant', description: 'code_verifier is not valid' };
   const row = await store.findCode(code);
-  if (!row || row.clientId !== clientId || row.redirectUri !== redirectUri || !pkceMatches(codeVerifier, row.codeChallenge)) {
+  if (!row || row.clientId !== clientId || (redirectUri !== undefined && row.redirectUri !== redirectUri) || !pkceMatches(codeVerifier, row.codeChallenge)) {
     return { ok: false, error: 'invalid_grant', description: 'the authorization code is invalid' };
   }
   // Everything the caller must prove has been proven; only now is a replay conclusive.

@@ -154,10 +154,11 @@ export async function fetchClientMetadata(clientId: string): Promise<ClientMetad
     const problem = redirectUriError(uri);
     if (problem) throw new ClientMetadataError(problem);
   }
-  const host = new URL(clientId).host;
+  const clientName = sanitizeDisplayName(d.client_name, '');
+  if (!clientName) throw new ClientMetadataError('client_name must be a non-empty display name');
   return {
     clientId,
-    clientName: sanitizeDisplayName(d.client_name, host),
+    clientName,
     redirectUris: uris as string[],
     clientUri: typeof d.client_uri === 'string' && redirectUriError(d.client_uri) === null ? d.client_uri : null,
   };
