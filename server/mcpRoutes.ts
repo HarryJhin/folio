@@ -132,7 +132,15 @@ export function registerMcpRoutes(app: FastifyInstance): void {
   }, { maxRequestBodySize: bodyLimit, onerror: (error) => app.log.error(error) });
   const serve = toNodeHandler(handler, { maxRequestBodySize: bodyLimit, onerror: (error) => app.log.error(error) });
   app.addHook('onClose', async () => handler.close());
-  app.post('/mcp', { bodyLimit, onRequest: refuseOversizedInDemo }, async (request, reply) => {
+  app.post('/mcp', {
+    bodyLimit, onRequest: refuseOversizedInDemo,
+    errorHandler(error, _request, reply) {
+      if (error.code === 'FST_ERR_CTP_INVALID_JSON_BODY' || error.code === 'FST_ERR_CTP_EMPTY_JSON_BODY') {
+        return reply.status(400).send({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: invalid JSON' }, id: null });
+      }
+      throw error;
+    },
+  }, async (request, reply) => {
     const auth = await resolveMcpAuth(request);
     if (!auth) {
       const anon = checkDemoMcpAnonymousRate(request.ip);

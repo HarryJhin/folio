@@ -19,7 +19,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
+import { McpServer, ProtocolError, ProtocolErrorCode, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { ApiTokenScope, PageMeta, SpaceRole, TableColumn, TableRow, User } from '../shared/contracts.js';
 import { tableColumnSchema, tableColumnTypeSchema, tableFilterRuleSchema, tableOptionSchema } from '../shared/contracts.js';
@@ -2468,12 +2468,12 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string;
     return { prompts: skills.map((s) => ({ name: skillPromptName(s, skills), title: s.name, description: s.description || `Team skill "${s.name}"` })) };
   });
   server.server.setRequestHandler('prompts/get', async (request) => {
-    if (publicSpaceOf(actor) !== undefined) throw new Error(NOT_ON_PUBLIC_SITE);
+    if (publicSpaceOf(actor) !== undefined) throw new ProtocolError(ProtocolErrorCode.InvalidParams, NOT_ON_PUBLIC_SITE);
     const skills = await listTeamSkills(actor.user);
     const found = findSkill(skills, request.params.name);
-    if ('error' in found) throw new Error(found.error);
+    if ('error' in found) throw new ProtocolError(ProtocolErrorCode.InvalidParams, found.error);
     const { error } = await checkPageRole(actor, found.skill.id, 'viewer');
-    if (error) throw new Error('skill not found');
+    if (error) throw new ProtocolError(ProtocolErrorCode.InvalidParams, 'skill not found');
     const text = await readSkillText(found.skill);
     return {
       description: found.skill.description || found.skill.name,
