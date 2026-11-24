@@ -44,7 +44,7 @@ import type { GitIdentity } from './git.js';
 import { badRequest, HttpError } from './errors.js';
 import { tableColumnSchema, tableViewSchema } from '../shared/contracts.js';
 import type { PageKind, PageMeta, TableCellValue, TableColumn, TableDoc, TableRow, TableView } from '../shared/contracts.js';
-import { duplicateRowReplacements, uniqueTableRows, isOverHardRowLimit, isTableParseError, parseTableFile, serializeTableFile } from '../shared/tables/index.js';
+import { duplicateRowReplacements, isOverHardRowLimit, isTableParseError, parseTableFile, pruneDanglingColumnRefs, serializeTableFile, uniqueTableRows } from '../shared/tables/index.js';
 import { decodeScenePayload, extractScenePayload, renderSceneSvg } from './confluenceWhiteboard.js';
 import { orderBoardElements, placeBoundTexts, withBoardIndexes } from './boardOrder.js';
 import type { ExcalidrawElement, ExcalidrawScene } from './confluenceWhiteboard.js';
@@ -965,31 +965,6 @@ export function tableDocFromYDoc(ydoc: Y.Doc): TableDoc {
     views: r.views.toArray().map((m) => pruneDanglingColumnRefs(viewFromY(m), columnIds)),
     rows: r.rows.toArray().map((m) => rowFromY(m, columns)),
   };
-}
-
-/**
- * Drops a view's references to columns that no longer exist. The same rule
- * rowFromY applies to cell values, one level up: when one user deletes a
- * column while another has it hidden/sorted/filtered in their view, the
- * reference stays in the CRDT (so undoing the deletion restores the view
- * exactly) but is never SERIALIZED — a `sort:` or `filter:` entry naming a
- * column the schema doesn't have would make the file's own frontmatter
- * self-inconsistent, and every reader of it would have to guess.
- */
-function pruneDanglingColumnRefs(view: TableView, columnIds: ReadonlySet<string>): TableView {
-  const hidden = view.columns.hidden.filter((id) => columnIds.has(id));
-  const order = view.columns.order.filter((id) => columnIds.has(id));
-  const width = Object.fromEntries(Object.entries(view.columns.width).filter(([id]) => columnIds.has(id)));
-  const sort = view.sort.filter((s) => columnIds.has(s.column));
-  const rules = view.filter.rules.filter((rule) => columnIds.has(rule.column));
-  const unchanged =
-    hidden.length === view.columns.hidden.length &&
-    order.length === view.columns.order.length &&
-    Object.keys(width).length === Object.keys(view.columns.width).length &&
-    sort.length === view.sort.length &&
-    rules.length === view.filter.rules.length;
-  if (unchanged) return view;
-  return { ...view, columns: { hidden, order, width }, sort, filter: { ...view.filter, rules } };
 }
 
 // ---------------------------------------------------------------------------
