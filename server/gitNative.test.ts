@@ -170,6 +170,42 @@ describe('git-native spaces (round 3, real git + real PG)', () => {
     }
   });
 
+  it.each(['md', 'pdf'])('limits %s history to revisions inside the space root, across renames', async ext => {
+    const space = await storage.createSpace('Mounted history ' + ext, null);
+    const repo = storage.getRepoDir(space.slug);
+    const mount = 'docs';
+    const before = 'docs-staging/first.' + ext;
+    const imported = 'imported.' + ext;
+    const current = 'current.' + ext;
+    const content = ext === 'md' ? '# Import\n' : '%PDF-1.4\n';
+    const author = { name: 'Tester', email: 'tester@example.test' };
+    try {
+      await fs.mkdir(path.join(repo, 'docs-staging'));
+      await fs.mkdir(path.join(repo, mount));
+      await fs.writeFile(path.join(repo, before), content);
+      await git.commitAll(repo, 'before import', author);
+      const preImport = await git.headSha(repo);
+      await fs.rename(path.join(repo, before), path.join(repo, mount, imported));
+      await git.commitAll(repo, 'import', author);
+      const inMount = await git.headSha(repo);
+      await fs.rename(path.join(repo, mount, imported), path.join(repo, mount, current));
+      await git.commitAll(repo, 'rename in mount', author);
+      await query('UPDATE spaces SET root_path = $2 WHERE slug = $1', [space.slug, mount]);
+      await storage.setSpaceRootPathCache(space.slug, mount);
+      await storage.scanSpace(space.slug);
+      const id = (await storage.getEntryIdByExactPath(space.slug, current))!;
+      const history = await gitSync.getPageHistory(id);
+      expect(history.map(r => r.sha)).toContain(inMount);
+      expect(history.map(r => r.sha)).not.toContain(preImport);
+      const atImport = await gitSync.getPageAtSha(id, inMount);
+      if (ext === 'md') expect(atImport.markdown).toBe(content);
+      else expect(atImport.file).toMatchObject({ path: imported, size: Buffer.byteLength(content) });
+      await expect(gitSync.getPageAtSha(id, preImport)).rejects.toMatchObject({ status: 404 });
+    } finally {
+      await deleteTestSpace(space.slug);
+    }
+  });
+
   it('conflict detection: a diverged merge lands with markers and status=conflict, clearing once resolved', async () => {
     const bareDir = path.join(os.tmpdir(), `folio-test-bare-${Date.now()}.git`);
     const { execFile } = await import('node:child_process');

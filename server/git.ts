@@ -609,22 +609,31 @@ export async function fileHistory(
   max = 100,
   askpassScript?: string,
   spaceSlug?: string,
+  rootPath = '',
 ): Promise<PageHistoryEntry[]> {
-  const sep = '\x1f'; // unit separator: won't appear in a commit subject
-  const format = `%H${sep}%an${sep}%aI${sep}%s`;
+  const sep = '\x1f';
+  const entries = await fileLogWithPaths(dir, relPath, `%H${sep}%an${sep}%aI${sep}%s`, max, askpassScript, spaceSlug);
+  return entries.filter(entry => !rootPath || entry.path.startsWith(rootPath + '/')).map(entry => {
+    const [sha, author, date, ...rest] = entry.header.split(sep);
+    return { sha, author, date, message: rest.join(sep) };
+  });
+}
+
+/** Git's NUL-delimited paths remain literal even with quotes or newlines in filenames. */
+async function fileLogWithPaths(dir: string, relPath: string, format: string, max?: number, askpassScript?: string, spaceSlug?: string) {
   const { stdout } = await execGit(
     dir,
-    ['log', `--max-count=${max}`, `--pretty=format:${format}`, '--follow', '--', relPath],
+    ['log', ...(max === undefined ? [] : [`--max-count=${max}`]), '--follow', '--name-only', '-z', `--pretty=format:${format}`, '--', relPath],
     remoteAuthEnv(askpassScript, spaceSlug),
   );
-  if (!stdout.trim()) return [];
-  return stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [sha, author, date, ...rest] = line.split(sep);
-      return { sha, author, date, message: rest.join(sep) };
-    });
+  const entries: { header: string; path: string }[] = [];
+  for (const record of stdout.split('\0\0')) {
+    const newline = record.indexOf('\n');
+    if (newline < 0) continue;
+    const path = record.slice(newline + 1).split('\0', 1)[0];
+    if (path) entries.push({ header: record.slice(0, newline), path });
+  }
+  return entries;
 }
 
 /**
@@ -685,22 +694,10 @@ export async function pathAtRevisionSha(
   askpassScript?: string,
   spaceSlug?: string,
 ): Promise<{ sha: string; path: string } | null> {
-  const { stdout } = await execGit(
-    dir,
-    ['log', '--follow', '--name-only', '-z', '--pretty=format:%H', '--', relPath],
-    remoteAuthEnv(askpassScript, spaceSlug),
-  );
+  const entries = await fileLogWithPaths(dir, relPath, '%H', undefined, askpassScript, spaceSlug);
   const wanted = sha.toLowerCase();
-  // -z keeps paths literal even when they contain quotes or newlines. Git
-  // separates the commit records and terminates each reported path with NUL.
-  for (const record of stdout.split('\0\0')) {
-    const newline = record.indexOf('\n');
-    if (newline < 0) continue;
-    const commit = record.slice(0, newline);
-    const path = record.slice(newline + 1).split('\0', 1)[0];
-    if (commit.startsWith(wanted) && path) return { sha: commit, path };
-  }
-  return null;
+  const match = entries.find(entry => entry.header.startsWith(wanted));
+  return match ? { sha: match.header, path: match.path } : null;
 }
 
 /** Size in bytes of the blob at `sha:path` (`git cat-file -s`), without reading it. */
