@@ -56,14 +56,22 @@ export function translateOperations(
   previous: TableRow[],
   next: TableRow[],
   operations: Operation[],
+  sourceRows: TableRow[] = previous,
 ): TablePatch[] {
   const patches: TablePatch[] = [];
 
   for (const operation of operations) {
     if (operation.type === 'CREATE') {
+      let at = operation.fromRowIndex;
+      if (sourceRows.length !== previous.length) {
+        const before = previous[at - 1];
+        const anchor = before ?? previous[0];
+        const sourceIndex = anchor ? sourceRows.findIndex((row) => row.id === anchor.id) : -1;
+        at = sourceIndex < 0 ? sourceRows.length : sourceIndex + (before ? 1 : 0);
+      }
       patches.push({
         kind: 'rows:create',
-        at: operation.fromRowIndex,
+        at,
         rows: next.slice(operation.fromRowIndex, operation.toRowIndex),
       });
       continue;
@@ -199,6 +207,10 @@ export function applyPatch(doc: TableDoc, patch: TablePatch): TableDoc {
 
 export function applyPatches(doc: TableDoc, patches: TablePatch[]): TableDoc {
   return patches.reduce(applyPatch, doc);
+}
+
+export function duplicateGridRow({ rowData }: { rowData: TableRow }): TableRow {
+  return { id: makeRowId(), values: structuredClone(rowData.values) };
 }
 
 /** A blank row carrying every column's `default` (spec §2.3). */

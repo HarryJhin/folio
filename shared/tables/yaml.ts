@@ -28,7 +28,7 @@ import {
   type TableRow,
   type TableView,
 } from '../contracts.js';
-import { type TableParseError } from './codec.js';
+import { uniqueTableRows, type TableParseError } from './codec.js';
 
 export interface TableYamlDoc {
   meta: { id: string; version: 1; rowIds: 'column' | 'none' };
@@ -59,6 +59,19 @@ const yamlDocSchema = z.object({
   rows: z.array(rowSchema),
 });
 
+export function tableExportDoc(doc: Pick<TableYamlDoc, 'meta' | 'views'>, columns: TableColumn[], rows: TableRow[]): TableYamlDoc {
+  const included = new Set(columns.map((column) => column.id));
+  return {
+    meta: doc.meta,
+    columns,
+    views: doc.views,
+    rows: rows.map(({ id, values }) => ({
+      id,
+      values: Object.fromEntries(Object.entries(values).filter(([column]) => included.has(column))),
+    })),
+  };
+}
+
 /** Canonical YAML dump of `{ meta, columns, views, rows }` — no line-wrapping, so long descriptions/labels round-trip exactly. */
 export function dumpTableYaml(doc: TableYamlDoc): string {
   return yaml.dump(doc, { lineWidth: -1, sortKeys: false, noRefs: true });
@@ -76,7 +89,7 @@ export function parseTableYaml(text: string): TableYamlDoc | TableParseError {
     const message = result.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
     return mkError(`Invalid table YAML: ${message}`, result.error);
   }
-  return result.data as TableYamlDoc;
+  return { ...result.data, rows: uniqueTableRows(result.data.rows) };
 }
 
 export function isTableYamlParseError(x: TableYamlDoc | TableParseError): x is TableParseError {

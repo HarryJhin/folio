@@ -45,6 +45,8 @@ import {
   convertMultipleToSingle,
   defaultCellValue,
   dumpTableYaml,
+  tableExportDoc,
+  uniqueTableRows,
   encodeCell,
   generateRowId,
   gridToTableValues,
@@ -120,7 +122,7 @@ export type TableDocPatch =
 export function applyTablePatch(doc: TableDoc, patch: TableDocPatch): TableDoc {
   switch (patch.type) {
     case 'insertRows':
-      return { ...doc, rows: [...doc.rows, ...patch.rows] };
+      return { ...doc, rows: [...doc.rows, ...uniqueTableRows(patch.rows, doc.rows.map((row) => row.id))] };
     case 'replaceRows':
       return { ...doc, rows: patch.rows };
     case 'updateRows': {
@@ -558,11 +560,11 @@ export async function exportTable(
       return { contentType: 'text/tab-separated-values; charset=utf-8', filename: `${stem}.tsv`, data: stringifyTsv(grid) };
     }
     case 'yaml': {
-      const data = dumpTableYaml({ meta: doc.meta, columns, views: doc.views, rows });
+      const data = dumpTableYaml(tableExportDoc(doc, columns, rows));
       return { contentType: 'application/yaml; charset=utf-8', filename: `${stem}.yaml`, data };
     }
     case 'json': {
-      const data = JSON.stringify({ meta: doc.meta, columns, views: doc.views, rows }, null, 2);
+      const data = JSON.stringify(tableExportDoc(doc, columns, rows), null, 2);
       return { contentType: 'application/json; charset=utf-8', filename: `${stem}.json`, data };
     }
     case 'md': {

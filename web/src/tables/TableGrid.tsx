@@ -9,7 +9,7 @@ import './grid.css';
 import { buildGridColumns } from './gridColumns';
 import type { GridColumnDeps } from './gridColumns';
 import { makeGridContextMenu } from './GridContextMenu';
-import { translateOperations } from './patch';
+import { duplicateGridRow, translateOperations } from './patch';
 // The library does not re-export its own `Operation` type from the package
 // entry point — see patch.ts for why this comes from there instead.
 import type { Operation } from './patch';
@@ -33,6 +33,7 @@ import type { TablePatch } from './types';
 
 export interface TableGridProps {
   rows: TableRow[];
+  sourceRows: TableRow[];
   columns: TableColumn[];
   view: TableView;
   onPatch: (patches: TablePatch[]) => void;
@@ -106,6 +107,7 @@ function GutterCell({ rowData, columnData }: CellProps<TableRow, GutterData>) {
 
 export default function TableGrid({
   rows,
+  sourceRows,
   columns,
   view,
   onPatch,
@@ -159,10 +161,10 @@ export default function TableGrid({
 
   const handleChange = useCallback(
     (next: TableRow[], operations: Operation[]) => {
-      const patches = translateOperations(previousRef.current, next, operations);
+      const patches = translateOperations(previousRef.current, next, operations, sourceRows);
       if (patches.length > 0) onPatch(patches);
     },
-    [onPatch],
+    [onPatch, sourceRows],
   );
 
   /**
@@ -237,6 +239,7 @@ export default function TableGrid({
         // survive a concurrent insert above it (spec §2.5).
         rowKey="id"
         createRow={createRow}
+        duplicateRow={duplicateGridRow}
         // `lockRows` is the spec's answer to "dragging rows is available
         // only in a view without an active sort": with a sort on, the
         // visible order isn't the file order, so adding/removing rows by

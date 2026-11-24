@@ -1,3 +1,4 @@
+import { parseTableYaml } from '@shared/tables/yaml';
 import { describe, expect, it } from 'vitest';
 import type { TableColumn, TableRow } from '@shared/contracts';
 import { exportFilename, serializeExport, toDelimited, toMarkdown } from './export';
@@ -97,20 +98,18 @@ describe('serializeExport', () => {
     expect(json.rows).toHaveLength(doc.rows.length);
   });
 
-  it('emits YAML with quoted strings, so a value like NO cannot parse as a boolean', () => {
-    const yaml = serializeExport('yaml', { doc, rows: doc.rows, columns: doc.columns });
-    expect(yaml).toContain('meta:');
-    expect(yaml).toContain('rows:');
-    expect(yaml).toContain('"01JCXYZ8Q0W3M4E5R6"');
+  it('preserves string-like scalars through YAML import', () => {
+    const yaml = serializeExport('yaml', { doc, rows: rows({ a: 'NO' }), columns });
+    expect(parseTableYaml(yaml)).toMatchObject({ rows: [{ values: { a: 'NO' } }] });
   });
 
-  it('escapes a double quote when emitting YAML', () => {
+  it('preserves double quotes inside a YAML cell', () => {
     const yaml = serializeExport('yaml', {
       doc,
       columns: [{ id: 'a', name: 'A', type: 'text' }],
       rows: rows({ a: 'say "hi"' }),
     });
-    expect(yaml).toContain('\\"hi\\"');
+    expect(parseTableYaml(yaml)).toMatchObject({ rows: [{ values: { a: 'say "hi"' } }] });
   });
 });
 
@@ -126,4 +125,20 @@ describe('exportFilename', () => {
   it('falls back to a name rather than producing a bare extension', () => {
     expect(exportFilename('   ', 'json')).toBe('table.json');
   });
+});
+
+it('round-trips toolbar YAML including every column, saved view and row', () => {
+  const { meta, columns, views, rows } = doc;
+  const data = serializeExport('yaml', { doc, columns, rows });
+  expect(parseTableYaml(data)).toEqual({ meta, columns, views, rows });
+});
+
+it('only writes visible cell values to the current-view JSON and YAML', () => {
+  const input = { doc, columns: [columns[0]], rows: rows({ a: 'public', b: 'hidden-value' }) };
+  for (const format of ['json', 'yaml'] as const) {
+    const text = serializeExport(format, input);
+    const data = format === 'json' ? JSON.parse(text) : parseTableYaml(text);
+    expect(data).toMatchObject({ rows: [{ values: { a: 'public' } }] });
+    expect(text).not.toContain('hidden-value');
+  }
 });

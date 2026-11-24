@@ -630,6 +630,7 @@ export function TablePage({
             <LazyGrid
               height={gridHeight}
               rows={rows}
+              sourceRows={doc.rows}
               columns={shownColumns}
               view={view}
               onPatch={dispatch}

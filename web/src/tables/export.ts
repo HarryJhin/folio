@@ -1,4 +1,5 @@
 import type { TableColumn, TableDoc, TableRow } from '@shared/contracts';
+import { dumpTableYaml, tableExportDoc } from '@shared/tables/yaml';
 import { formatCellText } from './core';
 
 /**
@@ -84,72 +85,11 @@ export function toMarkdown({ rows, columns, includeIds }: ExportInput): string {
 
 /** Canonical `{ meta, columns, views, rows }` dump — the round-trip format of spec §10. */
 export function toJson({ doc, rows, columns }: ExportInput): string {
-  return JSON.stringify(
-    {
-      meta: doc.meta,
-      columns,
-      views: doc.views,
-      rows: rows.map((row) => ({ id: row.id, values: row.values })),
-    },
-    null,
-    2,
-  );
+  return JSON.stringify(tableExportDoc(doc, columns, rows), null, 2);
 }
 
-/**
- * Minimal YAML emitter for the same canonical shape.
- *
- * Hand-rolled rather than pulling in a YAML library because the value space
- * here is tiny and closed (strings, finite numbers, booleans, null, flat
- * arrays of strings) and adding a dependency is out of this zone's remit —
- * the orchestrator owns package.json. Every string is emitted quoted, which
- * is always valid YAML and sidesteps the whole class of "unquoted `NO`
- * parses as false" and "leading `@` is reserved" bugs. CORE's yaml.ts is
- * the normative emitter for the round-trip guarantee.
- */
 export function toYaml({ doc, rows, columns }: ExportInput): string {
-  const lines: string[] = [];
-  const quote = (value: string) => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-
-  const scalar = (value: unknown): string => {
-    if (value === null || value === undefined) return 'null';
-    if (typeof value === 'boolean') return value ? 'true' : 'false';
-    if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'null';
-    if (Array.isArray(value)) return `[${value.map((item) => scalar(item)).join(', ')}]`;
-    return quote(String(value));
-  };
-
-  lines.push('meta:');
-  lines.push(`  id: ${quote(doc.meta.id)}`);
-  lines.push(`  version: ${doc.meta.version}`);
-  lines.push(`  rowIds: ${quote(doc.meta.rowIds)}`);
-
-  lines.push('columns:');
-  for (const column of columns) {
-    lines.push(`  - id: ${quote(column.id)}`);
-    lines.push(`    name: ${quote(column.name)}`);
-    lines.push(`    type: ${quote(column.type)}`);
-    if (column.description) lines.push(`    description: ${quote(column.description)}`);
-    if (column.multiple) lines.push('    multiple: true');
-    if (column.options?.length) {
-      lines.push('    options:');
-      for (const option of column.options) {
-        const description = option.description ? `, description: ${quote(option.description)}` : '';
-        lines.push(`      - { value: ${quote(option.value)}, color: ${quote(option.color ?? 'gray')}${description} }`);
-      }
-    }
-  }
-
-  lines.push('rows:');
-  for (const row of rows) {
-    lines.push(`  - id: ${quote(row.id)}`);
-    lines.push('    values:');
-    for (const column of columns) {
-      lines.push(`      ${column.id}: ${scalar(row.values[column.id] ?? null)}`);
-    }
-  }
-
-  return `${lines.join('\n')}\n`;
+  return dumpTableYaml(tableExportDoc(doc, columns, rows));
 }
 
 export function serializeExport(format: ExportFormat, input: ExportInput): string {
