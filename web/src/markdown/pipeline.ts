@@ -1,6 +1,7 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import remarkCjkFriendly from 'remark-cjk-friendly/parseOnly';
 import remarkBreaks from 'remark-breaks';
 import remarkDirective from 'remark-directive';
 import remarkRehype from 'remark-rehype';
@@ -83,7 +84,7 @@ export interface RenderOptions {
  * Renders one markdown *segment* (never raw ```mermaid fences — those are
  * split out by `splitMermaidFences` before this runs) to sanitized HTML.
  *
- * Pipeline: remark-parse -> remark-gfm -> remarkOfm (Obsidian-flavoured markdown:
+ * Pipeline: remark-parse with GFM and CJK emphasis -> remarkOfm (Obsidian-flavoured markdown:
  * wikilinks and embeds, `%%comments%%`, `#tags`, `$math$`, callouts of any type
  * with fold and title - GitHub's five alerts included - and `^block-id`s; ONE
  * plugin, shared/ofm/remark.ts, also run by the PDF/DOCX exports. It needs the
@@ -169,6 +170,7 @@ export function renderMarkdownToHtml(
   const file = unified()
     .use(remarkParse)
     .use(remarkGfm)
+    .use(remarkCjkFriendly)
     // `++underline++` (shared/underline.ts) — a delimiter pair like `~~`, so it nests with `**`.
     .use(remarkUnderline)
     // The owner (17.09): "why is it in one line in reading?" — in markdown a

@@ -1,6 +1,7 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import remarkCjkFriendly from 'remark-cjk-friendly/parseOnly';
 import remarkRehype from 'remark-rehype';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
@@ -12,7 +13,7 @@ export type Labels = typeof en;
 
 // A downloaded snapshot is self-contained. Preserve structure and image descriptions without
 // loading remote media, running embeds, or interpreting raw HTML from a private document.
-const markdown = unified().use(remarkParse).use(remarkGfm).use(remarkRehype, {
+const markdown = unified().use(remarkParse).use(remarkGfm).use(remarkCjkFriendly).use(remarkRehype, {
   handlers: { image: (_state, node) => ({ type: 'text', value: node.alt ?? '' }) },
 }).use(rehypeSanitize, {
   tagNames: ['p', 'br', 'hr', 'em', 'strong', 'del', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li',

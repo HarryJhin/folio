@@ -52,6 +52,7 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 - Comments anchor to any selection in reading mode, formatted or not; a selection that ends at a block boundary stops at that line, and the collapse toggles and hidden-block notes are no longer counted as page text.
 - ⇧⌘K in the editor reaches the link command instead of opening the quick switcher.
+- Online and offline document readers now recognize Markdown emphasis next to Chinese, Japanese and Korean text, including a closing parenthesis followed by a Korean particle.
 - The installed app's title bar follows the selected Folio theme, including system appearance changes and offline reading (thanks @HarryJhin, #27).
 - The page tree, the template picker and the template list of a large space no longer load every page's indexed text and search vector into server memory, so a space with tens of thousands of pages stays responsive instead of exhausting the Node heap (reported in #19).
 - Browser Undo keeps working after an agent edits several separate passages of a page through REST/MCP (reported in #18).
