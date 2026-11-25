@@ -6,6 +6,8 @@ update rather than appended to, so there is no history to dig through.
 
 Version: **0.4.5**.
 
+The document reader and offline PWA reader register `remark-cjk-friendly/parseOnly` alongside GFM. Both recognize emphasis boundaries next to CJK text. The live editor uses a separate CodeMirror grammar.
+
 Migration 065 stores the first view per space. Signed-in space entry opens the graph by default. Space admins can select Space home in Space settings. The sidebar home and `/s/<space>/home` open the root index or directory listing. Public sites keep their document landing page.
 
 Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.
