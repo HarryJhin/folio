@@ -1684,6 +1684,8 @@ export interface AuthState {
   google: boolean;
   /** Enabled single sign-on providers (server/auth/oidc.ts) — one "Continue with …" button each. Absent when there are none. */
   ssoProviders?: SsoProviderPublic[];
+  /** Enabled provider to start automatically when a guest needs to sign in. */
+  autoSsoProvider?: string;
   /**
    * Public-demo mode (server/demo.ts, FOLIO_DEMO_MODE=1): present ONLY then — absent on every ordinary instance. On the login screen it lists the demo accounts to sign in as; for an authenticated session `accounts` is empty (the header banner needs only the reset interval).
    */

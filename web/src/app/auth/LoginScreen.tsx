@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { KeyRound } from 'lucide-react';
@@ -17,6 +17,7 @@ export interface LoginScreenProps {
   google?: boolean;
   /** GET /api/auth/state's `ssoProviders` — one "Continue with …" button each (server/auth/oidc.ts). */
   ssoProviders?: SsoProviderPublic[];
+  autoSsoProvider?: string;
   /** GET /api/auth/state's `demo` — present only on a public-demo instance (FOLIO_DEMO_MODE). The "sign in as…" block renders only when it lists accounts. */
   demo?: DemoInfo;
 }
@@ -103,6 +104,50 @@ function useSsoAuthError(): string | null {
   return key;
 }
 
+const AUTO_SSO_ATTEMPT = 'folio:sso:auto-start';
+
+/** A tab that was signed out or just tried automatic SSO must wait for an explicit retry. */
+export function rememberAutoSsoAttempt(provider: string | null) {
+  try {
+    if (provider) window.sessionStorage.setItem(AUTO_SSO_ATTEMPT, provider);
+    else window.sessionStorage.removeItem(AUTO_SSO_ATTEMPT);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function automaticStartUrl({ autoSsoProvider, ssoProviders }: LoginScreenProps) {
+  const provider = ssoProviders?.find((entry) => entry.slug === autoSsoProvider);
+  if (!provider || typeof window === 'undefined') return null;
+  const query = new URLSearchParams(window.location.search);
+  if (query.has('local') || query.has('authError')) return null;
+  try {
+    if (window.sessionStorage.getItem(AUTO_SSO_ATTEMPT) === provider.slug) return null;
+  } catch {
+    return null;
+  }
+  return ssoStartUrl(provider.slug, undefined, provider.kind);
+}
+
+export function LoginScreen(props: LoginScreenProps) {
+  const { t } = useTranslation('app');
+  // Freeze the initial decision: the manual form consumes ?authError and removes it from the URL.
+  const [startUrl, setStartUrl] = useState(() => automaticStartUrl(props));
+  const started = useRef(false);
+  useEffect(() => {
+    if (!startUrl || started.current) return;
+    started.current = true;
+    if (props.autoSsoProvider && rememberAutoSsoAttempt(props.autoSsoProvider)) {
+      window.location.replace(startUrl);
+    } else {
+      setStartUrl(null);
+    }
+  }, [startUrl, props.autoSsoProvider]);
+  if (startUrl) return <div role="status" className="grid h-full place-items-center">{t('auth.loading')}</div>;
+  return <ManualLoginScreen {...props} />;
+}
+
 /** Google's four-color "G" mark, inline (no brand asset in this repo). */
 function GoogleIcon() {
   return (
@@ -142,7 +187,7 @@ function SsoButton({ provider, href, primary }: { provider: SsoProviderPublic; h
  * (POST /api/auth/sso/discover), that provider's button leads; where the provider ENFORCES single sign-on the
  * password field disappears. `/login?local` keeps it for an instance admin's audited break-glass sign-in.
  */
-export function LoginScreen({ onDone, google, ssoProviders, demo }: LoginScreenProps) {
+function ManualLoginScreen({ onDone, google, ssoProviders, demo }: LoginScreenProps) {
   const { t } = useTranslation('app');
   const errorText = useApiErrorText();
   const ssoErrorKey = useSsoAuthError();
