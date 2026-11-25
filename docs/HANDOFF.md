@@ -16,6 +16,8 @@ OIDC token exchange selects the authentication method from the provider's discov
 
 The custom branch serves both MCP lifecycles and enforces browser origins. See [MCP and REST](MCP.md#connecting) for the HTTP and OAuth settings. Regression tests cover mixed REST/MCP edits, history across renames, typed trash restores and viewer-specific link resolution. Table exports share their structured serializer across the browser and server.
 
+Custom branch pushes run the CI checks before publishing an ARM64 image to the repository owner's GHCR namespace. The publish step records the immutable image digest in the run summary.
+
 ## What Folio is
 
 A team wiki whose content lives in Git. People write in the browser, together
