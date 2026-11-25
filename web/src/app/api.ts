@@ -132,6 +132,7 @@ import type {
   AssistantWarmBody,
   ShareLinkInfo,
   SharedPagePayload,
+  SpaceFirstView,
   SpaceInfo,
   SpaceList,
   SpacePropertyTypesResponse,
@@ -477,6 +478,11 @@ export const api = {
   getConfig: () => request<Partial<FolioConfig>>('/api/config'),
 
   listSpaces: () => request<SpaceList>('/api/spaces'),
+  setSpaceFirstView: (slug: string, firstView: SpaceFirstView) =>
+    request<{ firstView: SpaceFirstView }>(`/api/spaces/${encodeURIComponent(slug)}/first-view`, {
+      method: 'PUT',
+      body: JSON.stringify({ firstView }),
+    }),
 
   /** Round 3: empty space (name only) or git-backed (repoUrl/branch/rootPath/token) — same endpoint, richer body. */
   createSpace: (body: CreateSpaceGitBody) =>
