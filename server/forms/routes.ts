@@ -1,18 +1,5 @@
-/**
- * Round FORMS — two route groups, registered separately by server/index.ts
- * (mirrors registerTableRoutes vs registerPublicShareRoutes there):
- *
- *  - registerFormRoutes: protected (session required) — "Create a form" on
- *    an existing table.
- *  - registerPublicFormRoutes: OUTSIDE index.ts's protectedScope, same
- *    reasoning as the /files/ share-token scope and /api/share/:token
- *    itself — POST /api/forms/:id/submit must be reachable by an anonymous
- *    share-link guest, and protectedScope's blanket requireSession hook
- *    would 401 them before this handler ever ran. It still accepts a signed-
- *    in session (a space member submitting while logged in) — it just does
- *    that check itself instead of via the hook.
- */
-import type { FastifyInstance } from 'fastify';
+/** The editor routes require a session. Submission routes perform their own member or direct-share authorization. */
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { submitFormBodySchema, type SubmitFormResponse } from '../../shared/contracts.js';
 import { badRequest, forbidden, notFound, tooManyRequests } from '../errors.js';
 import * as storage from '../storage.js';
@@ -59,45 +46,37 @@ export function registerFormRoutes(app: FastifyInstance): void {
 }
 
 export function registerPublicFormRoutes(app: FastifyInstance): void {
-  app.post('/api/forms/:id/submit', async (request, reply) => {
-    const { id } = request.params as { id: string };
+  type SubmitRoute = { Params: { id: string; token?: string } };
+  async function handleSubmit(request: FastifyRequest<SubmitRoute>, reply: FastifyReply) {
+    const { id, token } = request.params;
     const body = parseBody(submitFormBodySchema, request.body);
+    // On the share route only the URL grant applies. Older clients send the token
+    // in the body of the member route, where a signed-in member keeps their role.
+    const authed = token === undefined ? await session.userForRequest(request) : null;
+    const shareToken = token ?? body.shareToken;
+    const share = !authed && shareToken ? await shares.resolveShareToken(shareToken) : undefined;
+    if (!authed && share?.pageId !== id) throw forbidden('invalid or expired share token for this form');
     const entry = await storage.getEntry(id);
     if (!entry || entry.kind !== 'form') throw notFound('form');
 
-    // Space member (viewer+ — spec: submitting is allowed at the READ role,
-    // deliberately looser than the editor+ every other write on this page
-    // kind needs) takes priority over a share token even if one was sent.
-    const authed = await session.userForRequest(request);
-    let submitterLabel: string;
-    let guestShareId: string | undefined;
     if (authed) {
       const role = await session.effectiveRole(authed, entry.space);
       if (!session.roleAtLeast(role, 'viewer')) throw forbidden('requires viewer+ role in this space to submit this form');
-      submitterLabel = authed.name;
     } else {
       const form = await storage.readFreshFormDoc(id);
       if (!form.public) throw forbidden('this form does not accept anonymous submissions');
-      if (!body.shareToken) throw forbidden('a share token is required for an anonymous submission');
-      const share = await shares.resolveShareToken(body.shareToken);
-      // Deliberately 403 here (not 404, unlike the read-side share routes'
-      // own "don't help a prober" rule) — this id came from the URL path, not
-      // from the token, so there's nothing to hide about it existing.
-      if (!share || share.pageId !== id) throw forbidden('invalid or expired share token for this form');
-      const limit = checkAnonymousSubmitRateLimit(body.shareToken, request.ip);
+      const limit = checkAnonymousSubmitRateLimit(shareToken!, request.ip);
       if (limit.limited) {
         reply.header('Retry-After', String(limit.retryAfterSeconds ?? 60));
         throw tooManyRequests('too many submissions from this link — try again in a minute');
       }
-      submitterLabel = 'anonymous';
-      guestShareId = share.id;
     }
 
     try {
-      const result = await submitForm(entry, submitterLabel, body.values, { anonymous: !authed });
+      const result = await submitForm(entry, authed?.name ?? 'anonymous', body.values, { anonymous: !authed });
       gitSync.recordEditor(
         entry.space,
-        authed ? { name: authed.name, email: authed.email } : { name: `Guest via share ${guestShareId!.slice(0, 8)}`, email: 'guest@folio.local' },
+        authed ? { name: authed.name, email: authed.email } : { name: `Guest via share ${share!.id.slice(0, 8)}`, email: 'guest@folio.local' },
       );
       gitSync.noteActivity(entry.space);
       reply.status(201);
@@ -109,5 +88,8 @@ export function registerPublicFormRoutes(app: FastifyInstance): void {
       }
       throw err;
     }
-  });
+  }
+
+  app.post<SubmitRoute>('/api/share/:token/forms/:id/submit', handleSubmit);
+  app.post<SubmitRoute>('/api/forms/:id/submit', handleSubmit);
 }

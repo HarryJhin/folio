@@ -1990,7 +1990,7 @@ export function registerPublicShareRoutes(app: FastifyInstance): void {
     const spaceName = spaceInfo?.name ?? entry.space;
 
     // A canvas's file cards open what the share itself opens — its own page set.
-    const page: PageDoc = await buildPageDoc(entry, { kind: 'share', pageIds: scope.collected.ids });
+    const page: PageDoc = await buildPageDoc(entry, { kind: 'share', shareId: scope.share.id, pageIds: scope.collected.ids });
 
     const payload: SharedPagePayload = { mode, page, spaceName };
     if (share.includeChildren) {

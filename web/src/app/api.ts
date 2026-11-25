@@ -869,17 +869,11 @@ export const api = {
    */
   resolveFormTable: (formId: string) => request<{ id: string }>(`/api/forms/${encodeURIComponent(formId)}/table`),
 
-  /**
-   * POST /api/forms/:id/submit — OUTSIDE the session-required scope on the
-   * server (server/forms/routes.ts): a signed-in member's cookie still rides
-   * along automatically (credentials: 'include', same as every other call
-   * through `request` below), and an anonymous share guest sends
-   * `shareToken` instead. A 400 carries `fields` (per-column validation
-   * errors) — thrown as `ApiError` like any other failure; callers read
-   * `(err as ApiError).body?.fields` for the inline per-field messages.
-   */
-  submitForm: (formId: string, body: SubmitFormBody) =>
-    request<SubmitFormResponse>(`/api/forms/${encodeURIComponent(formId)}/submit`, { method: 'POST', body: JSON.stringify(body) }),
+  /** Shared forms use the direct link's grant. A workspace form uses the member's session. */
+  submitForm: (formId: string, { values, shareToken }: SubmitFormBody) =>
+    shareToken !== undefined
+      ? publicPost<SubmitFormResponse>(`/api/share/${encodeURIComponent(shareToken)}/forms/${encodeURIComponent(formId)}/submit`, { values })
+      : request<SubmitFormResponse>(`/api/forms/${encodeURIComponent(formId)}/submit`, { method: 'POST', body: JSON.stringify({ values }) }),
 
   /**
    * Who can be named in a `user` column (round 26) — the same round-15
