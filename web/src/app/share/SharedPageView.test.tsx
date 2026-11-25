@@ -122,6 +122,31 @@ describe('SharedPageView file readers', () => {
   });
 });
 
+describe('shared forms', () => {
+  it.each([
+    { isChild: false, isPublic: true, disabled: false },
+    { isChild: false, isPublic: false, disabled: true },
+    { isChild: true, isPublic: true, disabled: true },
+  ])('gates submission for child=$isChild, public=$isPublic', async ({ isChild, isPublic, disabled }) => {
+    const id = isChild ? 'c1' : 'root1';
+    const markdown = `---\nfolio: form\nversion: 1\nid: ${id}\ntable: answers.table.md\ntitle: Survey\npublic: ${isPublic}\nfields: []\n---\n`;
+    const fetch = stubFetchByUrl({
+      [isChild ? '/api/share/t1?page=c1' : '/api/share/t1']: docPayload({ id, kind: 'form', markdown }, WITH_TREE),
+    });
+    renderShare(isChild ? '/share/t1/p/c1' : '/share/t1');
+    const submit = await screen.findByRole<HTMLButtonElement>('button', { name: 'Submit' });
+    expect(submit.disabled).toBe(disabled);
+    fireEvent.submit(submit.form!);
+    if (disabled) {
+      expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/submit'))).toBe(false);
+    } else {
+      await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/share/t1/forms/root1/submit', expect.objectContaining({
+        method: 'POST', credentials: 'omit', body: JSON.stringify({ values: {} }),
+      })));
+    }
+  });
+});
+
 describe('SharedPageView — product mark', () => {
   it('shows the Folio mark without the product introduction', async () => {
     stubFetchByUrl({ '/api/share/t1': docPayload({}) });

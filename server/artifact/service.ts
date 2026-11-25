@@ -104,7 +104,15 @@ export async function setArtifactTitleIcon(id: string, change: { title?: string;
 }
 
 /** Who reads a page: a signed-in user (state on the server) or a share link / public site reader. */
-export type ArtifactReader = { kind: 'user'; userId: string } | { kind: 'anonymous' };
+type ArtifactReader = { kind: 'user'; userId: string } | { kind: 'share'; shareId?: string } | { kind: 'public'; space: string };
+
+function artifactTicketPath(pageId: string, reader: ArtifactReader): string | undefined {
+  switch (reader.kind) {
+    case 'user': return signArtifactToken(pageId, reader.userId);
+    case 'share': return reader.shareId ? 'guest/' + signArtifactToken(pageId, { kind: 'share', shareId: reader.shareId }) : undefined;
+    case 'public': return 'guest/' + signArtifactToken(pageId, { kind: 'public', space: reader.space });
+  }
+}
 
 /** PageDoc.artifact for this reader: the manifest, the bundle's files and signed URLs minted for them. */
 export async function buildArtifactPayload(entry: PageIndexEntry, reader: ArtifactReader): Promise<ArtifactPayload> {
@@ -114,7 +122,7 @@ export async function buildArtifactPayload(entry: PageIndexEntry, reader: Artifa
 
 function payloadFrom(entry: PageIndexEntry, info: BundleInfo, reader: ArtifactReader): ArtifactPayload {
   const m = info.manifest;
-  const token = signArtifactToken(entry.id, reader.kind === 'user' ? reader.userId : null);
+  const ticketPath = artifactTicketPath(entry.id, reader);
   const payload: ArtifactPayload = {
     type: m.type,
     entry: m.type === 'embed' ? '' : (m.entry ?? ''),
@@ -128,12 +136,12 @@ function payloadFrom(entry: PageIndexEntry, info: BundleInfo, reader: ArtifactRe
       payload.embedUrl = m.embed.url;
       if (m.embed.height !== undefined) payload.embedHeight = m.embed.height;
     }
-  } else if (m.entry && info.files.some((f) => f.path === m.entry)) {
-    payload.src = artifactFileUrl(token, m.entry);
+  } else if (ticketPath && m.entry && info.files.some((f) => f.path === m.entry)) {
+    payload.src = artifactFileUrl(ticketPath, m.entry);
   }
   // Where the page came from (origin, original URL) is the owner's business: guests (share links, public site) don't get it.
   if (m.source && reader.kind === 'user') payload.source = m.source;
-  if (m.source?.file && info.files.some((f) => f.path === m.source!.file)) payload.sourceSrc = artifactFileUrl(token, m.source.file);
+  if (ticketPath && m.source?.file && info.files.some((f) => f.path === m.source!.file)) payload.sourceSrc = artifactFileUrl(ticketPath, m.source.file);
   return payload;
 }
 

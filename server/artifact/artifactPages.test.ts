@@ -25,6 +25,10 @@ import { query } from '../db/pool.js';
 import { HttpError } from '../errors.js';
 import { buildFolioMcpServer, type McpActor } from '../mcp.js';
 import { buildPageDoc } from '../pageDoc.js';
+import { setAccess } from '../pageAccess.js';
+import { registerPublicSiteRoutes } from '../publicSiteRoutes.js';
+import { registerPublicShareRoutes } from '../routes.js';
+import { createShareLink, revokeShare, setShareIncludeChildren } from '../shares.js';
 import { readPageProperties, savePageProperties } from '../properties.js';
 import { registerPropertiesRoutes } from '../propertiesRoutes.js';
 import { searchPages } from '../search.js';
@@ -44,6 +48,8 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifyCookieModule.default);
   await app.register(fastifyMultipart);
   registerArtifactServeRoutes(app);
+  registerPublicShareRoutes(app);
+  registerPublicSiteRoutes(app);
   await app.register(async (scope) => {
     scope.addHook('onRequest', session.requireSession);
     registerArtifactRoutes(scope);
@@ -261,7 +267,90 @@ describe('artifact pages (real fs + real PG)', () => {
     expect(asUser.artifact?.files.map((f) => f.path)).toEqual(['index.html', 'js/app.js']);
     const asShare = await buildPageDoc(e, { kind: 'share', pageIds: new Set([e.id]) });
     expect(asShare.artifact?.stateServer).toBe(false);
-    expect(asShare.artifact?.src).not.toBe(asUser.artifact?.src);
+    expect(asShare.artifact?.src).toBeUndefined();
+  });
+
+  it('share artifacts recheck the link and its current subtree on every bundle request', async () => {
+    const root = await storage.createPage({ space, parentPath: '', title: 'Shared Report', kind: 'doc' });
+    const bundle = await app.inject({ method: 'POST', url: `/api/spaces/${space}/artifacts`, headers: auth, payload: {
+      title: 'Guest chart', parentPath: 'shared-report', html: '<h1>Chart</h1>',
+      files: [{ path: 'assets/data.json', content: '{"points":[1,2]}' }], sourceCode: 'const chart = true',
+    } });
+    expect(bundle.statusCode).toBe(201);
+    const entry = await storage.requireEntry(bundle.json().page.id);
+    const state = await app.inject({ method: 'PUT', url: `/api/pages/${entry.id}/artifact/state`, headers: auth,
+      payload: { key: 'ls:private', value: 'member-only-chart-value' } });
+    expect(state.statusCode).toBe(200);
+    const share = await createShareLink(root.id, owner.id, 'view', 'http://localhost', true);
+    const secret = new URL(share.url).pathname.split('/').pop()!;
+    const page = await app.inject({ url: `/api/share/${secret}?page=${entry.id}` });
+    expect(page.statusCode).toBe(200);
+    const payload = (page.json().page as PageDoc).artifact!;
+    expect(payload.src).toMatch(/^\/art\/guest\/[^/]+\/index\.html$/);
+    const base = payload.src!.slice(0, payload.src!.lastIndexOf('/') + 1);
+    const ticket = base.split('/')[3]!;
+    expect(Buffer.from(ticket.split('.')[0]!, 'base64url').toString()).not.toContain(secret);
+    expect(payload.sourceSrc).toBe(`${base}source.jsx`);
+    const memberTicket = signArtifactToken(entry.id, owner.id);
+    for (const url of [`/art/${ticket}/index.html`, `/art/guest/${memberTicket}/index.html`]) {
+      expect((await app.inject({ url })).statusCode).toBe(403);
+    }
+    const files = ['index.html', 'assets/data.json', '__folio/bridge.js', 'source.jsx'];
+    for (const rel of ['artifact.yaml', 'Artifact.YAML']) expect((await app.inject({ url: base + rel })).statusCode).toBe(404);
+    const verifyFiles = async (status: number) => {
+      for (const file of files) {
+        const res = await app.inject({ url: base + file });
+        expect(res.statusCode, file).toBe(status);
+        expect(res.headers['cache-control']).toBe('private, no-store');
+        expect(res.headers['referrer-policy']).toBe('no-referrer');
+        expect(res.headers['content-security-policy']).toBe(ARTIFACT_CSP);
+        expect(res.body).not.toContain('member-only-chart-value');
+      }
+    };
+    await verifyFiles(200);
+    await setShareIncludeChildren(share.id, false);
+    await verifyFiles(404);
+    await setShareIncludeChildren(share.id, true);
+    await setAccess(owner, entry, 'restricted', []);
+    await verifyFiles(404);
+    await setAccess(owner, entry, 'space', []);
+    await verifyFiles(200);
+    const direct = await createShareLink(entry.id, owner.id, 'view', 'http://localhost');
+    const directPage = await app.inject({ url: `/api/share/${new URL(direct.url).pathname.split('/').pop()}` });
+    const directSrc = (directPage.json().page as PageDoc).artifact!.src!;
+    await storage.movePage(entry.id, 'moved-reports');
+    await verifyFiles(404);
+    expect((await app.inject({ url: directSrc })).statusCode).toBe(200);
+    await storage.movePage(entry.id, 'shared-report');
+    await verifyFiles(200);
+    await revokeShare(share.id);
+    await verifyFiles(404);
+    expect((await app.inject({ url: directSrc })).statusCode).toBe(200);
+    await revokeShare(direct.id);
+    expect((await app.inject({ url: directSrc })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'HEAD', url: base + 'assets/data.json' })).statusCode).toBe(404);
+  });
+
+  it('published artifact files follow space visibility and page restrictions', async () => {
+    const entry = await storage.requireEntry(created.page.id);
+    await authStore.setSpaceVisibility(space, 'public');
+    try {
+      const page = await app.inject({ url: `/api/public/spaces/${space}/pages/${entry.id}` });
+      expect(page.statusCode).toBe(200);
+      const src = (page.json().page as PageDoc).artifact!.src!;
+      expect(src).toMatch(/^\/art\/guest\/[^/]+\/index\.html$/);
+      const url = src.replace(/index\.html$/, 'js/app.js');
+      expect((await app.inject({ url })).statusCode).toBe(200);
+      await setAccess(owner, entry, 'restricted', []);
+      expect((await app.inject({ url })).statusCode).toBe(404);
+      await setAccess(owner, entry, 'space', []);
+      expect((await app.inject({ url })).statusCode).toBe(200);
+      await authStore.setSpaceVisibility(space, 'private');
+      expect((await app.inject({ url })).statusCode).toBe(404);
+    } finally {
+      await authStore.setSpaceVisibility(space, 'private');
+      await setAccess(owner, entry, 'space', []);
+    }
   });
 
   it('state: personal and shared, limits enforced', async () => {

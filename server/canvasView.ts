@@ -32,7 +32,7 @@ import { sliceEmbedFragment } from './embed.js';
 import { resolveRelative } from './indexV2/resolve.js';
 
 /** Who reads the canvas: a signed-in user or the public site (accessSql.ts), or a share link with its own page set. */
-export type CanvasReader = PageViewer | { kind: 'share'; pageIds: ReadonlySet<string> };
+export type CanvasReader = PageViewer | { kind: 'share'; pageIds: ReadonlySet<string>; shareId?: string };
 
 /** At most this many document cards of one canvas get an excerpt; the rest show their title only. */
 export const CANVAS_MAX_EXCERPTS = 200;

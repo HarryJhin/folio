@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Shared and published HTML artifacts now recheck access to each bundle file. Visitors can submit directly shared forms that accept anonymous responses.
+
 - Fixed New page creating a second directory when the open folder name contained spaces or non-ASCII characters. Folder links now preserve literal percent escapes, number signs and question marks.
 
 - Removed the “What is Folio?” badge and its product introduction from shared pages.

@@ -93,9 +93,18 @@ export interface ResolvedShare {
 
 /** Resolves a raw token to its page + mode. undefined for unknown OR revoked (same non-distinguishing treatment as an unknown session/PAT). */
 export async function resolveShareToken(token: string): Promise<ResolvedShare | undefined> {
+  return resolveActiveShare('token', token);
+}
+
+/** Internal lookup for a signed, page-scoped grant which contains no usable share token. */
+export async function resolveShareId(id: string): Promise<ResolvedShare | undefined> {
+  return resolveActiveShare('id', id);
+}
+
+async function resolveActiveShare(column: 'token' | 'id', value: string): Promise<ResolvedShare | undefined> {
   const row = await queryOne<{ id: string; page_id: string; mode: ShareLinkMode; include_children: boolean }>(
-    'SELECT id, page_id, mode, include_children FROM share_links WHERE token = $1 AND revoked_at IS NULL',
-    [token],
+    `SELECT id, page_id, mode, include_children FROM share_links WHERE ${column} = $1 AND revoked_at IS NULL`,
+    [value],
   );
   return row ? { id: row.id, pageId: row.page_id, mode: row.mode, includeChildren: row.include_children } : undefined;
 }

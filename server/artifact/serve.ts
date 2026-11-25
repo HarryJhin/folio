@@ -3,8 +3,9 @@
  *
  * Registered OUTSIDE the session scope: the iframe that loads these files is
  * sandboxed without allow-same-origin, so it has no Folio cookies — the signed
- * token (token.ts) is the whole credential, minted per reader into
- * PageDoc.artifact.src. Every response carries the sandbox CSP below, so even
+ * ticket (token.ts) identifies the reader and the page. Guest tickets use
+ * /art/guest/ and require a live share or current public-page visibility.
+ * Every response carries the sandbox CSP below, so even
  * a file opened directly in a tab runs in an opaque origin; ACAO * lets that
  * opaque origin load the bundle's own modules and JSON through CORS.
  *
@@ -19,11 +20,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { ARTIFACT_CDN_ALLOWLIST } from '../../shared/contracts.js';
+import { shareIdGrantsPage } from '../export/shareScope.js';
+import { isPublicPage } from '../publicSites.js';
 import * as storage from '../storage.js';
 import { readBundleInfo, resolveBundleFile } from './bundle.js';
-import { FOLIO_RESERVED_DIR, scriptJson } from './manifest.js';
+import { FOLIO_RESERVED_DIR, normalizeBundlePath, scriptJson } from './manifest.js';
 import { readArtifactState } from './state.js';
-import { artifactsOrigin, verifyArtifactToken } from './token.js';
+import { artifactFileUrl, verifyArtifactToken } from './token.js';
 
 const CDN = ARTIFACT_CDN_ALLOWLIST.join(' ');
 
@@ -104,8 +107,8 @@ function bridgeScript(): string {
 }
 
 /** The URL the bridge is also served from (absolute on ARTIFACTS_ORIGIN when set). The entry page inlines it instead. */
-export function bridgeUrl(token: string): string {
-  return `${artifactsOrigin()}/art/${token}/${FOLIO_RESERVED_DIR}/bridge.js`;
+export function bridgeUrl(ticketPath: string): string {
+  return artifactFileUrl(ticketPath, `${FOLIO_RESERVED_DIR}/bridge.js`);
 }
 
 /** The bridge preceded by the reader's localStorage state (when there is one), ready to serve or inline. */
@@ -142,35 +145,43 @@ export function injectBridge(html: string, code: string): string {
 }
 
 function fail(reply: FastifyReply, status: number, message: string): FastifyReply {
-  return reply.status(status).headers(ARTIFACT_HEADERS).header('cache-control', 'no-store').type('text/plain; charset=utf-8').send(message);
+  return reply.status(status).header('cache-control', 'private, no-store').type('text/plain; charset=utf-8').send(message);
 }
 
 export function registerArtifactServeRoutes(app: FastifyInstance): void {
   // One wildcard, split here: a token is longer than the router's 100-character limit for a `:param`.
   app.get('/art/*', async (request, reply) => {
-    const wildcard = (request.params as { '*': string })['*'] ?? '';
+    const routePath = (request.params as { '*': string })['*'] ?? '';
+    const guestRoute = routePath.startsWith('guest/');
+    reply.headers(ARTIFACT_HEADERS);
+    if (guestRoute) reply.header('cache-control', 'private, no-store');
+    const wildcard = guestRoute ? routePath.slice('guest/'.length) : routePath;
     const slash = wildcard.indexOf('/');
     const token = slash === -1 ? wildcard : wildcard.slice(0, slash);
     const rest = slash === -1 ? '' : wildcard.slice(slash + 1);
     const claims = verifyArtifactToken(token);
-    if (!claims) return fail(reply, 403, 'This artifact link has expired. Reload the page in Folio.');
+    if (!claims || guestRoute !== Boolean(claims.guest)) return fail(reply, 403, 'This artifact link has expired. Reload the page in Folio.');
     const entry = await storage.getEntry(claims.pageId);
     if (!entry || entry.kind !== 'artifact') return fail(reply, 404, 'not found');
+    if (claims.guest) {
+      const granted = claims.guest.kind === 'share'
+        ? await shareIdGrantsPage(claims.guest.shareId, entry.id)
+        : entry.space === claims.guest.space && await isPublicPage(entry);
+      if (!granted) return fail(reply, 404, 'not found');
+    }
     const rel = (rest ?? '').replace(/^\/+/, '');
 
     if (rel === `${FOLIO_RESERVED_DIR}/bridge.js`) {
       const code = await bridgeWithState(entry.id, claims.userId);
-      return reply
-        .headers(ARTIFACT_HEADERS)
-        .header('cache-control', claims.userId ? 'private, no-store' : 'private, max-age=300')
-        .type('text/javascript; charset=utf-8')
-        .send(code);
+      return reply.header('cache-control', 'private, no-store').type('text/javascript; charset=utf-8').send(code);
     }
 
+    // The manifest contains owner metadata and is not part of the guest payload's file list.
+    if (guestRoute && normalizeBundlePath(rel) !== rel) return fail(reply, 404, 'not found');
     const abs = await resolveBundleFile(entry.absPath, rel);
     if (!abs) return fail(reply, 404, 'not found');
     const info = await readBundleInfo(entry.absPath);
-    reply.headers(ARTIFACT_HEADERS).type(artifactContentType(rel));
+    reply.type(artifactContentType(rel));
     if (info.manifest.type !== 'embed' && rel === info.manifest.entry) {
       const html = await fs.readFile(abs, 'utf8');
       // The inlined bridge carries the reader's state: the entry is never cached or shared.

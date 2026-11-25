@@ -2,6 +2,7 @@
  * Artifacts, the pure parts: the manifest codec, bundle paths, the zip import's
  * safety rules, link classification, the token and the bridge injection.
  */
+import { createHash, createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
 import { ArtifactImportError } from './errors.js';
@@ -274,8 +275,14 @@ describe('token', () => {
     const now = Date.now();
     const t = signArtifactToken('page-1', 'user-1', now);
     expect(verifyArtifactToken(t, now)).toMatchObject({ pageId: 'page-1', userId: 'user-1' });
-    const anon = signArtifactToken('page-1', null, now);
-    expect(verifyArtifactToken(anon, now)?.userId).toBeNull();
+    const guest = { kind: 'share', shareId: 'share-id' } as const;
+    const anon = signArtifactToken('page-1', guest, now);
+    expect(verifyArtifactToken(anon, now)).toMatchObject({ userId: null, guest });
+    expect(verifyArtifactToken(anon, now + 13 * 60 * 60 * 1000)).toBeNull();
+    const legacyBody = Buffer.from(JSON.stringify({ p: 'page-1', u: null, e: Math.floor(now / 1000) + 100 })).toString('base64url');
+    const previousKey = createHash('sha256').update(`folio-artifact-token:${process.env.FOLIO_SECRET}`).digest();
+    const legacyMac = createHmac('sha256', previousKey).update(legacyBody).digest('base64url');
+    expect(verifyArtifactToken(`${legacyBody}.${legacyMac}`, now)).toBeNull();
     const [body, mac] = t.split('.');
     const forged = Buffer.from(JSON.stringify({ p: 'page-2', u: 'user-1', e: Math.floor(now / 1000) + 100 })).toString('base64url');
     expect(verifyArtifactToken(`${forged}.${mac}`, now)).toBeNull();

@@ -3305,7 +3305,7 @@ export interface FormDoc {
 
 const formCellValueSchema = z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]);
 
-/** POST /api/forms/:id/submit body. `shareToken` is only consulted for an anonymous (no session) request against a `public: true` form. */
+/** Shared form clients send values to /api/share/:token/forms/:id/submit. The member endpoint also accepts shareToken for older anonymous clients. */
 export const submitFormBodySchema = z.object({
   values: z.record(z.string(), formCellValueSchema),
   shareToken: z.string().optional(),
@@ -3399,7 +3399,7 @@ export interface ArtifactPayload {
   type: ArtifactType;
   /** Entry path inside the bundle ('' for embed). */
   entry: string;
-  /** Signed URL of the entry for the sandboxed iframe (absolute when ARTIFACTS_ORIGIN is set). Absent for embed or when the entry is missing. */
+  /** Signed URL of the entry for the sandboxed iframe. Guest file requests recheck the share or publication. Absolute when ARTIFACTS_ORIGIN is set. Absent for embed or when the entry is missing. */
   src?: string;
   /** Third-party iframe URL for type 'embed'. */
   embedUrl?: string;
