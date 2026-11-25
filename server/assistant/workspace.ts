@@ -184,7 +184,7 @@ async function runtimeContextMarkdown(context: AssistantWorkspaceContext): Promi
   ];
 
   // Which page is open? `/s/:space/p/:id` sends pageId; the space home
-  // (`/s/:space`) and folder listings (`/s/:space/d/<dir>`) send none, yet the
+  // (`/s/:space/home`) and folder listings (`/s/:space/d/<dir>`) send none, yet the
   // user IS looking at a page there (the root index.md / the folder's index) —
   // resolve it server-side so the agent always knows where it is.
   let pageId = context.pageId;
@@ -192,7 +192,7 @@ async function runtimeContextMarkdown(context: AssistantWorkspaceContext): Promi
     try {
       const folderMatch = context.currentPath ? /^\/s\/[^/]+\/d\/(.+)$/.exec(context.currentPath) : null;
       const dir = folderMatch ? decodeURIComponent(folderMatch[1]).replace(/\/+$/, '') : '';
-      const isSpaceRoute = !!context.currentPath && /^\/s\/[^/]+\/?$/.test(context.currentPath);
+      const isSpaceRoute = !!context.currentPath && /^\/s\/[^/]+(?:\/home)?\/?$/.test(context.currentPath);
       if (isSpaceRoute || folderMatch) pageId = (await resolve(context.space, dir)).id;
     } catch {
       // no resolvable page for this route — the block below is simply omitted

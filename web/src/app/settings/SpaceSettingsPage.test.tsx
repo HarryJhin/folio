@@ -11,7 +11,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import i18next from 'i18next';
 import { EditorView } from '@codemirror/view';
-import type { AppearanceFile, AppearanceFileState, SpaceAppearanceResponse, SpacePublicSettingsResponse } from '@shared/contracts';
+import type { AppearanceFile, AppearanceFileState, SpaceAppearanceResponse, SpaceFirstView, SpaceList, SpacePublicSettingsResponse } from '@shared/contracts';
 import { ToastProvider } from '../ui/Toast';
 
 vi.mock('../auth/AuthProvider', () => ({
@@ -69,13 +69,25 @@ interface Stub {
 }
 
 /** `put` decides the PUT answer; the rest is fixed. */
-function stubApi(state: SpaceAppearanceResponse, put?: () => { status: number; body: unknown }): Stub {
+function stubApi(
+  state: SpaceAppearanceResponse,
+  put?: () => { status: number; body: unknown },
+  putFirstView?: (view: SpaceFirstView) => number,
+): Stub {
+  let firstView: SpaceFirstView | undefined;
   const fetchMock = vi.fn((input: unknown, init?: RequestInit) => {
     const url = String(input);
     const method = (init?.method ?? 'GET').toUpperCase();
     const reply = (status: number, body: unknown) =>
       Promise.resolve({ ok: status >= 200 && status < 300, status, statusText: '', json: () => Promise.resolve(body) });
-    if (url === '/api/spaces') return reply(200, { spaces: [{ slug: 'docs', name: 'Docs Space', pageCount: 3, visibility: 'public', myRole: 'admin' }] });
+    if (url === '/api/spaces/docs/first-view' && method === 'PUT') {
+      const next = JSON.parse(String(init?.body)).firstView;
+      const status = putFirstView?.(next) ?? 200;
+      if (status !== 200) return reply(status, { error: 'permission denied' });
+      firstView = next;
+      return reply(status, { firstView });
+    }
+    if (url === '/api/spaces') return reply(200, { spaces: [{ firstView, slug: 'docs', name: 'Docs Space', pageCount: 3, visibility: 'public', myRole: 'admin' }] });
     if (url === '/api/spaces/docs/appearance' && method === 'GET') return reply(200, state);
     if (url === '/api/spaces/docs/appearance' && method === 'PUT') return put ? (({ status, body }) => reply(status, body))(put()) : reply(200, state);
     if (url === '/api/spaces/docs/public-settings') return reply(200, PUBLIC_SETTINGS);
@@ -93,8 +105,7 @@ function LocationProbe() {
   return <output data-testid="search">{location.search}</output>;
 }
 
-function renderPage(initialPath = '/s/docs/settings') {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderPage(initialPath = '/s/docs/settings', queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
@@ -112,11 +123,37 @@ function renderPage(initialPath = '/s/docs/settings') {
 const tab = (name: string) => screen.getByRole('tab', { name: new RegExp(`^${name}`) });
 
 describe('SpaceSettingsPage', () => {
+  it('defaults to Graph and updates the cached space entry only after saving successfully', async () => {
+    const saveView = vi.fn().mockReturnValueOnce(403).mockReturnValue(200);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    stubApi(appearance(), undefined, saveView);
+    renderPage('/s/docs/settings', client);
+
+    const group = within(await screen.findByRole('group', { name: 'First view' }));
+    const graph = group.getByRole('radio', { name: 'Graph' }) as HTMLInputElement;
+    const home = group.getByRole('radio', { name: 'Space home' }) as HTMLInputElement;
+    const save = group.getByRole('button', { name: 'Save first view' }) as HTMLButtonElement;
+    expect(graph.checked).toBe(true);
+    expect(save.disabled).toBe(true);
+    fireEvent.click(home);
+    expect(saveView).not.toHaveBeenCalled();
+    fireEvent.click(save);
+    expect(await group.findByRole('alert')).toBeTruthy();
+    expect(home.checked).toBe(true);
+    expect(client.getQueryData<SpaceList>(['spaces'])?.spaces[0].firstView).toBeUndefined();
+
+    fireEvent.click(save);
+    await waitFor(() => expect(client.getQueryData<SpaceList>(['spaces'])?.spaces[0].firstView).toBe('home'));
+    expect(saveView.mock.calls).toEqual([['home'], ['home']]);
+    expect(save.disabled).toBe(true);
+    expect(group.queryByRole('alert')).toBeNull();
+  });
+
   it('has the three tabs and shows every file with its path in the repository and a link to it', async () => {
     stubApi(appearance());
     renderPage();
 
-    expect(screen.getByRole('heading', { name: 'Site & PDF settings' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Space settings' })).toBeTruthy();
     expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Site', 'Site appearance', 'PDF']);
 
     // Site: the publication block (stored in Folio) and the site.json badge with its "Open in repository" link.

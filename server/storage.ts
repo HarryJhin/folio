@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import type { PoolClient } from 'pg';
 import * as matterNS from 'gray-matter';
 import { ulid } from 'ulidx';
-import type { CanvasDocument, CreatePageBody, FormDoc, PageKind, PageMeta, PageStatus, SpaceAssetMode, SpaceGitStatus, SpaceInfo, SpaceVisibility, TableColumn, TableDoc, TableView, TemplateListItem, TreeNode } from '../shared/contracts.js';
+import type { CanvasDocument, CreatePageBody, FormDoc, PageKind, PageMeta, PageStatus, SpaceAssetMode, SpaceFirstView, SpaceGitStatus, SpaceInfo, SpaceVisibility, TableColumn, TableDoc, TableView, TemplateListItem, TreeNode } from '../shared/contracts.js';
 import { INDEX_META_VERSION, officeFormat, TEMPLATE_DESCRIPTION_KEY, WRITING_RULES_PATH } from '../shared/contracts.js';
 import { compileScanIgnore } from './scanIgnore.js';
 import { badRequest, conflict, forbidden, notFound } from './errors.js';
@@ -2482,6 +2482,7 @@ interface SpaceRow {
   last_sync_by_email: string | null;
   last_error: string | null;
   asset_mode: SpaceAssetMode;
+  first_view: SpaceFirstView;
   /** Round 27 (access and rights): 'private' (default) or 'instance' — see docs/spec-access.md §3. Not exercised by this module's own access checks (that's server/auth/session.ts's effectiveRole/membershipsFor); carried through purely so SpaceInfo can report it. */
   visibility: SpaceVisibility;
   /** Migration 041: the space's own extra scan-ignore entries, and the explicit light-footprint flag. */
@@ -2498,6 +2499,7 @@ function rowToSpaceInfo(r: SpaceRow): SpaceInfo {
     name: r.name,
     pageCount: Number(r.page_count),
     assetMode: r.asset_mode,
+    firstView: r.first_view,
     visibility: r.visibility,
     ...(r.light_footprint || r.root_path !== '' ? { lightFootprint: true as const } : {}),
     scanIgnore: r.scan_ignore ?? [],
@@ -2516,12 +2518,12 @@ function rowToSpaceInfo(r: SpaceRow): SpaceInfo {
   };
 }
 
-const SPACE_SELECT_BASE = `SELECT s.slug, s.name, s.repo_url, s.branch, s.root_path, s.status, s.last_sync_at, s.last_sync_by_name, s.last_sync_by_email, s.last_error, s.asset_mode, s.visibility, s.scan_ignore, s.light_footprint,
+const SPACE_SELECT_BASE = `SELECT s.slug, s.name, s.repo_url, s.branch, s.root_path, s.status, s.last_sync_at, s.last_sync_by_name, s.last_sync_by_email, s.last_error, s.asset_mode, s.first_view, s.visibility, s.scan_ignore, s.light_footprint,
           (SELECT p.title FROM pages_index p WHERE p.space_slug = s.slug AND p.is_index AND p.path NOT LIKE '%/%') AS root_title,
           COUNT(p2.id) AS page_count
      FROM spaces s
      LEFT JOIN pages_index p2 ON p2.space_slug = s.slug`;
-const SPACE_GROUP_BY = `GROUP BY s.slug, s.name, s.repo_url, s.branch, s.root_path, s.status, s.last_sync_at, s.last_sync_by_name, s.last_sync_by_email, s.last_error, s.asset_mode, s.visibility, s.scan_ignore, s.light_footprint`;
+const SPACE_GROUP_BY = `GROUP BY s.slug, s.name, s.repo_url, s.branch, s.root_path, s.status, s.last_sync_at, s.last_sync_by_name, s.last_sync_by_email, s.last_error, s.asset_mode, s.first_view, s.visibility, s.scan_ignore, s.light_footprint`;
 
 export async function listSpaces(): Promise<SpaceInfo[]> {
   const rows = await query<SpaceRow>(`${SPACE_SELECT_BASE} ${SPACE_GROUP_BY} ORDER BY s.name`);
@@ -5404,6 +5406,7 @@ export interface TrashSpaceSnapshot extends TrashPagePayload {
   rootPath: string;
   visibility: string;
   assetMode: string;
+  firstView?: SpaceFirstView;
   /** Migration 041; absent in snapshots taken before it. */
   scanIgnore?: string[];
   lightFootprint?: boolean;
@@ -5584,6 +5587,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
     root_path: string;
     visibility: string;
     asset_mode: string;
+    first_view: SpaceFirstView;
     scan_ignore: string[] | null;
     light_footprint: boolean;
     public_subdomain: string | null;
@@ -5593,7 +5597,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
     public_indexing: boolean;
     public_primary_host: string;
   }>(
-    'SELECT name, repo_url, branch, root_path, visibility, asset_mode, scan_ignore, light_footprint, public_subdomain, public_domain, public_allow_download, public_allow_assistant, public_indexing, public_primary_host FROM spaces WHERE slug = $1',
+    'SELECT name, repo_url, branch, root_path, visibility, asset_mode, first_view, scan_ignore, light_footprint, public_subdomain, public_domain, public_allow_download, public_allow_assistant, public_indexing, public_primary_host FROM spaces WHERE slug = $1',
     [space],
   );
   if (!row) return null;
@@ -5612,6 +5616,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
     rootPath: row.root_path ?? '',
     visibility: row.visibility ?? 'private',
     assetMode: row.asset_mode ?? 'store',
+    firstView: row.first_view,
     scanIgnore: row.scan_ignore ?? [],
     lightFootprint: row.light_footprint === true,
     publicSettings: {
@@ -5883,6 +5888,11 @@ export async function saveAssetIntoRepo(space: string, originalName: string, dat
   // Indexed as a file right away (wave 3): the embed the editor inserts next resolves to it without waiting for a scan.
   await spaceFiles.recordFile(space, `assets/${finalName}`, path.join(assetsDir, finalName));
   return { url: `/files/${space}/assets/${finalName}`, path: `assets/${finalName}` };
+}
+
+export async function setSpaceFirstView(space: string, firstView: SpaceFirstView): Promise<void> {
+  const row = await queryOne('UPDATE spaces SET first_view = $2 WHERE slug = $1 RETURNING slug', [space, firstView]);
+  if (!row) throw notFound('space');
 }
 
 /** Space-admin setting "store images in the repository" (`spaces.asset_mode`). */

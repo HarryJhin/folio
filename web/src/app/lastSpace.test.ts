@@ -11,7 +11,7 @@
  * silently dropped.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { chooseHomeSpace, hiddenRootTarget, readLastSpace, rememberLastSpace } from './lastSpace';
+import { chooseHomeSpace, hiddenRootTarget, spaceEntryPath, readLastSpace, rememberLastSpace } from './lastSpace';
 
 afterEach(() => {
   localStorage.clear();
@@ -56,4 +56,10 @@ it('redirects a hidden bare home while keeping the curated reference and unautho
   expect(hiddenRootTarget(data, 'legacy', 'first')?.slug).toBe('first');
   expect(hiddenRootTarget(data, 'ref', null)).toBeUndefined();
   expect(hiddenRootTarget(data, 'unavailable', null)).toBeUndefined();
+});
+
+it('opens the graph by default and honors the home preference independently in each space', () => {
+  expect(spaceEntryPath({ slug: 'alpha' })).toBe('/s/alpha/graph');
+  expect(spaceEntryPath({ slug: 'beta', firstView: 'home' })).toBe('/s/beta/home');
+  expect(spaceEntryPath({ slug: 'alpha', firstView: 'graph' }, '#intro')).toBe('/s/alpha/home');
 });

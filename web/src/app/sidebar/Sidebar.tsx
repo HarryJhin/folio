@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router';
+import { useMatch, useNavigate } from 'react-router';
 import { useAssistantEnabled } from '../assistant/availability';
 import { useTranslation } from 'react-i18next';
 import {
@@ -142,6 +142,7 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
   // Not useParams() here — see useActivePageId's docblock for why that
   // silently returns undefined for :id when called from Shell/Sidebar.
   const id = useActivePageId();
+  const atHome = useMatch('/s/:space/home');
   const folderPath = useActiveFolderPath();
   const navigate = useNavigate();
   const showToast = useToast();
@@ -627,10 +628,11 @@ export function Sidebar({ space, desktopCollapsed, mobileOpen, onMobileClose, on
 
         <button
           type="button"
-          onClick={() => navigate(`/s/${space}`)}
+          onClick={() => navigate(`/s/${encodeURIComponent(space)}/home`)}
+          aria-current={atHome ? 'page' : undefined}
           // py-2 md:py-[3px]: the touch-target floor on <md (round 14/25), the dense 26px row at md+.
           className={`mx-2 mt-px flex items-center gap-2 rounded-md py-2 pl-1 pr-2 text-left text-[13px] leading-5 md:py-[3px] ${
-            !id
+            atHome
               ? 'bg-white font-medium text-neutral-950 shadow-[0_1px_2px_rgb(0_0_0/0.06)] ring-1 ring-neutral-200/90 dark:bg-white/[0.08] dark:text-white dark:shadow-none dark:ring-white/10'
               : 'text-neutral-800 hover:bg-neutral-200/60 dark:text-neutral-200 dark:hover:bg-white/[0.06]'
           }`}
