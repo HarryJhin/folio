@@ -58,6 +58,7 @@ env:
 
 jobs:
   build:
+    if: github.repository == 'evergreen-it-dev/folio'
     strategy:
       matrix:
         include:
@@ -123,6 +124,7 @@ jobs:
           overwrite: true
 
   merge:
+    if: github.repository == 'evergreen-it-dev/folio'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15

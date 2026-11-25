@@ -4,7 +4,7 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
-- Successful CI on the custom branch publishes a native ARM64 image to the fork owner's GHCR namespace.
+- Custom branch pushes and pull requests run the source checks. Release publishing is restricted to the upstream repository.
 
 - Spaces open in the graph by default. Space admins can choose Space home as the first view in Space settings.
 
