@@ -152,7 +152,7 @@ describe('SharedPageView — subtree navigation', () => {
     fireEvent.click(Array.from(nav.querySelectorAll('a')).find((a) => a.getAttribute('href') === '/share/t1/p/c1')!);
 
     await waitFor(() => expect(screen.getByTestId('markdown-body').textContent).toContain('Child body.'));
-    expect(fetchMock).toHaveBeenCalledWith('/api/share/t1?page=c1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/share/t1?page=c1', { credentials: 'omit' });
 
     const after = screen.getAllByRole('navigation', { name: 'Pages' })[0];
     const current = Array.from(after.querySelectorAll('a')).find((a) => a.getAttribute('aria-current') === 'page');

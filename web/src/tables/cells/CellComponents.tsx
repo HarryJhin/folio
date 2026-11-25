@@ -1,3 +1,6 @@
+import { useContext } from 'react';
+import { attachmentUrl } from '@shared/attachmentUrls';
+import { TableAttachmentContext } from '../attachmentContext';
 import { useEffect, useRef, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -419,6 +422,7 @@ export function LinkCell(props: Props) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   const raw = cellToText(readValue(props));
   const { label, url } = parseLink(raw);
+  const context = useContext(TableAttachmentContext);
   const open = props.focus && !props.disabled;
 
   return (
@@ -432,7 +436,7 @@ export function LinkCell(props: Props) {
       </span>
       {url !== '' && !open && (
         <a
-          href={url}
+          href={context ? attachmentUrl(url, context) : url}
           // Same treatment as file links elsewhere in Folio: new tab, and
           // noreferrer so an external target can't reach back via opener.
           target="_blank"

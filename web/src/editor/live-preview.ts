@@ -133,7 +133,7 @@ function blockDecoration(spec: BlockSpec, ctx: PageContext, lang: string): Range
       const widget = new ImageWidget(
         spec.alt,
         spec.src,
-        resolveAssetSrc(spec.src, ctx.space, ctx.pagePath, ctx.shareToken, ctx.attachment),
+        resolveAssetSrc(spec.src, ctx.space, ctx.pagePath, ctx.shareToken, ctx.attachment, ctx.pageId),
         spec.width,
       );
       return block(widget).range(spec.from, spec.to);

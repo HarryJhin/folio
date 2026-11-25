@@ -28,7 +28,7 @@ import '../i18n/register';
  * public route).
  */
 async function fetchSharedChildPage(token: string, pageId: string): Promise<SharedPagePayload> {
-  const res = await fetch(`/api/share/${encodeURIComponent(token)}?page=${encodeURIComponent(pageId)}`);
+  const res = await fetch(`/api/share/${encodeURIComponent(token)}?page=${encodeURIComponent(pageId)}`, { credentials: 'omit' });
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {
@@ -352,7 +352,7 @@ function SharedPageBody({ payload, token, headerActions }: { payload: SharedPage
     // subtree token its child rooms as viewer, and `mode` is already 'view'.
     return (
       <div className="h-full w-full">
-        <TablePageView pageId={page.id} role={mode === 'edit' ? 'editor' : 'viewer'} collabParams={{ share: token }} />
+        <TablePageView space={page.space} pageId={page.id} role={mode === 'edit' ? 'editor' : 'viewer'} collabParams={{ share: token, as: 'guest' }} />
       </div>
     );
   }
@@ -453,7 +453,7 @@ function SharedPageBody({ payload, token, headerActions }: { payload: SharedPage
           pagePath={page.path}
           lightFootprint={page.lightFootprint === true}
           collabUrl={wsBase}
-          collabParams={{ share: token }}
+          collabParams={{ share: token, as: 'guest' }}
           // The socket had the token; everything else the editor renders needs
           // it too — /files answers 401 to a session-free guest without it, so
           // an edit link used to show a broken image in reading and an empty

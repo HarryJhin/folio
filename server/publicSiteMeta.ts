@@ -1,3 +1,4 @@
+import { attachmentUrl } from '../shared/attachmentUrls.js';
 /**
  * Server-rendered <head> of a public site's pages (14.10.2026, SEO) — the
  * per-page counterpart of shareMeta.ts. Crawlers and link-preview bots read
@@ -120,12 +121,14 @@ export interface PublicSiteHead {
 /** An absolute URL for a front matter image: absolute http(s) as is, root-relative on the site origin, relative to the page's folder under /files/. */
 function absoluteImageUrl(raw: string, origin: string, entry: PageIndexEntry): string | undefined {
   const value = raw.trim();
+  const scoped = attachmentUrl(value, { space: entry.space, pageId: entry.id, publicSite: { space: entry.space, instanceUrl: process.env.PUBLIC_URL }, origin });
+  if (scoped !== value) return origin + scoped;
   if (/^https?:\/\//i.test(value)) return value;
   if (/^[a-z][a-z0-9+.-]*:/i.test(value) || value.startsWith('//')) return undefined;
   if (value.startsWith('/')) return `${origin}${value}`;
   const resolved = path.posix.normalize(path.posix.join(entry.dirPath || '', value));
   if (resolved.startsWith('..') || resolved.split('/').some((s) => s.startsWith('.'))) return undefined;
-  return `${origin}/files/${encodeURIComponent(entry.space)}/${resolved.split('/').map(encodeURIComponent).join('/')}`;
+  return `${origin}/files/${encodeURIComponent(entry.space)}/${resolved.split('/').map(encodeURIComponent).join('/')}?publicSite=${encodeURIComponent(entry.space)}`;
 }
 
 type Route = { kind: 'home' } | { kind: 'page'; id: string } | { kind: 'other' } | { kind: 'missing' };

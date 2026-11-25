@@ -21,6 +21,10 @@ vi.mock('../../markdown', () => ({
   ),
 }));
 
+vi.mock('../routes/TablePageView', () => ({
+  TablePageView: ({ collabParams }: { collabParams?: { publicSite?: string } }) => <div data-testid="table-site">{collabParams?.publicSite}</div>,
+}));
+
 const { PublicSiteView } = await import('./PublicSiteView');
 const { PublicSiteLoader } = await import('./PublicSiteRoutes');
 
@@ -444,4 +448,10 @@ describe('PublicSiteLoader', () => {
     await waitFor(() => expect(treeLinks().length).toBeGreaterThan(0));
     expect(treeLinks().map((a) => a.getAttribute('href'))).toContain('/p/p1');
   });
+});
+
+it('opens a published table using the public collaboration route', async () => {
+  const { PublicPageBody } = await import('./PublicPageBody');
+  render(<PublicPageBody site={SITE} page={{ ...PAGES.p1.page, kind: 'table' }} />);
+  expect(screen.getByTestId('table-site').textContent).toBe('docs');
 });

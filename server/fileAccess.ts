@@ -232,6 +232,37 @@ async function anyReferences(pages: Iterable<PageSource>, relPath: string): Prom
   return false;
 }
 
+/** Capture only references present before the first guest can edit this page, including by-name index resolutions. */
+export async function initialGuestFileReferences(pageId: string): Promise<string[]> {
+  const page = await storage.requireEntry(pageId);
+  const refs = new Set(await pageReferences(page));
+  const resolved = await query<{ target_path: string }>(
+    "SELECT target_path FROM page_links WHERE source_page_id = $1 AND kind IN ('asset','page')", [pageId],
+  );
+  for (const row of resolved) refs.add(row.target_path);
+  return [...refs];
+}
+
+/** An edit guest can change the page, but cannot widen a file grant by changing its text. */
+async function canGrantFile(pageIds: ReadonlySet<string>, relPath: string): Promise<Set<string>> {
+  const limited = await query<{ page_id: string }>(
+    `SELECT page_id FROM guest_edited_pages g WHERE page_id = ANY($1::text[])
+      AND NOT EXISTS (SELECT 1 FROM guest_readable_files f WHERE f.page_id = g.page_id AND f.path = $2)`,
+    [[...pageIds], relPath],
+  );
+  const eligible = new Set(pageIds);
+  for (const row of limited) eligible.delete(row.page_id);
+  return eligible;
+}
+
+/** A signed-in editor supplying the file's bytes may add that upload to their guest-editable page. */
+export async function grantUploadedRepoFile(pageId: string, relPath: string): Promise<void> {
+  await query(
+    'INSERT INTO guest_readable_files SELECT page_id, $2 FROM guest_edited_pages WHERE page_id = $1 ON CONFLICT DO NOTHING',
+    [pageId, relPath],
+  );
+}
+
 /**
  * The indexed page(s) stored at `relPath`. Case-insensitive on purpose: on a
  * case-insensitive filesystem `SECRET.md` opens `secret.md`, and must meet
@@ -280,15 +311,16 @@ async function mayReadFromPageSet(
     const restricted = await pageAccess.restrictedPageIds(space);
     if (pages.some((page) => restricted.has(page.id))) return false;
   }
+  const eligible = await canGrantFile(allowedIds, relPath);
   for (const batch of sourceBatches) {
-    if (await anyReferences(await batch(), relPath)) return true;
+    if (await anyReferences([...(await batch())].filter((p) => eligible.has(p.id)), relPath)) return true;
   }
   // A file the index resolved BY NAME (`![[diagram.png]]` found in `attachments/`) is not the path as written in the
   // page, yet the page does reference it: the index's resolved target of a page of the set counts too.
-  if (allowedIds.size > 0) {
+  if (eligible.size > 0) {
     const rows = await query<{ n: number }>(
       `SELECT 1 AS n FROM page_links WHERE source_page_id = ANY($1::text[]) AND target_path = $2 AND kind IN ('asset', 'page') LIMIT 1`,
-      [[...allowedIds], relPath],
+      [[...eligible], relPath],
     );
     if (rows.length > 0) return true;
   }
@@ -347,7 +379,8 @@ export async function requireSessionFileAccess(request: FastifyRequest, space: s
   // Also shown on a page this user CAN open? Then it is theirs as well.
   const hiddenIds = new Set(hidden.map((page) => page.id));
   const readable = (await storage.listEntries(space)).filter((e) => !hiddenIds.has(e.id));
-  if (await anyReferences(readable, relPath)) return;
+  const eligible = await canGrantFile(new Set(readable.map((p) => p.id)), relPath);
+  if (await anyReferences(readable.filter((p) => eligible.has(p.id)), relPath)) return;
   throw forbidden('this file belongs to a page you cannot open');
 }
 
@@ -372,7 +405,9 @@ export async function filesOfHiddenPagesOnly(space: string, hidden: ReadonlyArra
   const hiddenIds = new Set(hidden.map((page) => page.id));
   for (const entry of await storage.listEntries(space)) {
     if (hiddenIds.has(entry.id)) continue;
-    for (const ref of await pageReferences(entry)) only.delete(ref);
+    for (const ref of await pageReferences(entry)) {
+      if (only.has(ref) && (await canGrantFile(new Set([entry.id]), ref)).has(entry.id)) only.delete(ref);
+    }
     if (only.size === 0) break;
   }
   return only;
@@ -387,6 +422,11 @@ async function isPlainFileInside(root: string, relPath: string): Promise<boolean
   } catch {
     return false;
   }
+}
+
+/** Public document exports read repository files from disk and must meet the same policy as anonymous GETs. */
+export async function publicExportMayReadFile(space: string, relPath: string): Promise<boolean> {
+  return normalizeFilePath(relPath) === relPath && await publicMayReadFile(space, relPath) && await isPlainFileInside(storage.getSpaceDir(space), relPath);
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +447,7 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
       // Runs after @fastify/static has set its own headers, for 200, 206 and
       // 304 alike; an error status (4xx/5xx) is left exactly as it was.
       onSend: async (request, reply, payload) => {
+        reply.header('Cache-Control', 'private, no-store');
         const headers = pendingFileHeaders.get(request);
         if (headers && reply.statusCode < 400) reply.headers(headers);
         return payload;
@@ -418,6 +459,7 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
       if (!relPath) throw notFound('file');
 
       const shareToken = queryString(request.query, 'share');
+      const publicSite = queryString(request.query, 'publicSite');
       if (shareToken) {
         const scope = await resolveShareScope(shareToken); // undefined for unknown OR revoked
         if (!scope) return reply.status(401).send({ error: 'invalid or revoked share token' });
@@ -425,6 +467,8 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
         // before the filesystem is consulted: 403 here says nothing about
         // whether a file outside the grant exists.
         if (!(await shareMayReadFile(scope, space, relPath))) return reply.status(403).send({ error: 'share link does not grant access to this file' });
+      } else if (publicSite) {
+        if (publicSite !== space || !(await publicMayReadFile(space, relPath))) throw notFound('file');
       } else {
         const resolved = await session.resolveAuth(request);
         if (resolved) {

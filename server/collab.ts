@@ -3315,7 +3315,8 @@ export function attachToServer(httpServer: HttpServer): void {
       // session is a browser-only concept with no equivalent "scope" story for
       // an open-ended real-time stream, so it stays cookie-only.
       const cookies = session.parseCookieHeader(req.headers.cookie);
-      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
+      const guestRoute = url.searchParams.has('publicSite') || (url.searchParams.has('share') && url.searchParams.get('as') === 'guest');
+      const sessionToken = guestRoute ? undefined : cookies[session.SESSION_COOKIE_NAME];
       const user = await session.userForToken(sessionToken);
 
       let role: Awaited<ReturnType<typeof session.effectiveRole>>;
@@ -3383,7 +3384,8 @@ export function attachToServer(httpServer: HttpServer): void {
         // `.agent/**`, not a template) opens, read-only, for anybody — that is
         // what lets a table render live on the public site. Never an editor, and
         // never a restricted page: isPublicPage answers false for those.
-        if (!granted && (await isPublicPage(entry))) {
+        const publicSite = url.searchParams.get('publicSite');
+        if (!granted && !shareToken && (publicSite === null || publicSite === entry.space) && (await isPublicPage(entry))) {
           role = 'viewer';
           guestIdentity = { name: 'Public visitor', email: 'guest@folio.local' };
           publicVisitor = true;

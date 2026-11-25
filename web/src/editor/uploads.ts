@@ -38,7 +38,7 @@ export interface UploadedAsset {
 }
 
 /** Uploads a file and resolves to the URL the server assigned it (a bare string, or the richer {url, path?}). */
-export type AssetUploader = (space: string, file: File) => Promise<string | UploadedAsset>;
+export type AssetUploader = (space: string, file: File, pageId?: string) => Promise<string | UploadedAsset>;
 
 /* ----------------------------------------------------------------- pure -- */
 
@@ -135,12 +135,12 @@ export function isImageFile(file: File): boolean {
 
 /* ---------------------------------------------------------------- upload -- */
 
-export const uploadAsset: AssetUploader = async (space, file) => {
+export const uploadAsset: AssetUploader = async (space, file, pageId) => {
   const body = new FormData();
   // Field name must stay "file" — see the multipart handler in server/routes.ts.
   body.append('file', file, file.name);
 
-  const response = await fetch(`/api/spaces/${encodeURIComponent(space)}/assets`, {
+  const response = await fetch(`/api/spaces/${encodeURIComponent(space)}/assets${pageId ? `?page=${encodeURIComponent(pageId)}` : ''}`, {
     method: 'POST',
     body,
     credentials: 'same-origin',
@@ -161,7 +161,7 @@ export async function insertFiles(
   at: number,
   upload: AssetUploader,
 ): Promise<void> {
-  const { space, pagePath } = view.state.facet(pageContextFacet);
+  const { space, pagePath, pageId } = view.state.facet(pageContextFacet);
   let pos = at;
 
   for (const file of files) {
@@ -175,7 +175,7 @@ export async function insertFiles(
 
     let markdown = '';
     try {
-      const uploaded = await upload(space, file);
+      const uploaded = await upload(space, file, pageId);
       markdown = markdownFor(file.name, assetLinkTarget(uploaded, pagePath), isImageFile(file));
     } catch {
       if (view.dom.isConnected) showToast(view, t('upload.failed', { name: file.name }));
@@ -216,14 +216,14 @@ export async function insertConvertedHtml(
   upload: AssetUploader,
 ): Promise<void> {
   if (!converted.markdown) return;
-  const { space, pagePath } = view.state.facet(pageContextFacet);
+  const { space, pagePath, pageId } = view.state.facet(pageContextFacet);
   view.dispatch({ changes: pasteInsertEdit(view, from, to, converted.markdown, converted.block) });
 
   for (const image of converted.images) {
     if (!view.dom.isConnected) return;
     let url = '';
     try {
-      url = assetLinkTarget(await upload(space, image.file), pagePath);
+      url = assetLinkTarget(await upload(space, image.file, pageId), pagePath);
     } catch {
       showToast(view, t('upload.failed', { name: image.file.name }));
     }

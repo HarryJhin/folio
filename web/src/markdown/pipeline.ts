@@ -42,6 +42,7 @@ export interface RenderOptions {
   pagePath: string;
   /** Round 8: forwarded to rehypeRelativeLinks — see its own doc comment. */
   shareToken?: string;
+  pageId?: string;
   /**
    * Round 15: display name for a known `@handle`, undefined for anything
    * else — undefined lookup (list not loaded yet, or the caller has no way

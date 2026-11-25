@@ -8,6 +8,8 @@ Version: **0.4.5**.
 
 The document reader and offline PWA reader register `remark-cjk-friendly/parseOnly` alongside GFM. Both recognize emphasis boundaries next to CJK text. The live editor uses a separate CodeMirror grammar.
 
+Migration 067 records page grants for stored attachments and repository-file grants for guest-editable pages. It reconstructs legacy stored-asset grants from indexed references and preserves unlinked drafts for the recorded uploader. Earlier edit-share roots have no trustworthy record of approved references. Their owners can reattach the intended files. Public and share readers use page-scoped URLs. Attachment responses use `private, no-store`. Content cached under an older release follows its original expiry.
+
 Migration 065 stores the first view per space. Signed-in space entry opens the graph by default. Space admins can select Space home in Space settings. The sidebar home and `/s/<space>/home` open the root index or directory listing. Public sites keep their document landing page.
 
 Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.

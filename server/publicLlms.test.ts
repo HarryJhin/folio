@@ -238,7 +238,7 @@ describe('public sites — llms.txt and Markdown copies (real PG)', () => {
     expect(res.body).toContain(`[setup](https://${SITE_HOST}/p/${setup.id}.md)`);
     expect(res.body).toContain('[secret](secret.md)'); // not public: not rewritten to anything that names it
     expect(res.body).not.toContain(secret.id);
-    expect(res.body).toContain(`![logo](https://${SITE_HOST}/files/${acme}/img/logo.png)`);
+    expect(res.body).toContain(`![logo](https://${SITE_HOST}/files/${acme}/img/logo.png?publicSite=${acme})`);
 
     // [[Wikilinks]] to published pages are Markdown links to their .md; unpublished or missing targets are plain text.
     const links = (await get(`/p/${rich.id}.md`, SITE_HOST)).body;

@@ -28,7 +28,7 @@ describe('public site URLs', () => {
 
   it('encodes what needs it', () => {
     expect(publicPageUrl(path, 'a/b c')).toBe('/public/docs/p/a%2Fb%20c');
-    expect(publicFileUrl('docs', 'img/my shot #1.png')).toBe('/files/docs/img/my%20shot%20%231.png');
+    expect(publicFileUrl('docs', 'img/my shot #1.png')).toBe('/files/docs/img/my%20shot%20%231.png?publicSite=docs');
   });
 
   it('the sign-in link opens the same page in the app and opts out of the public redirect', () => {

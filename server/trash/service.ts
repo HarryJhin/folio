@@ -394,6 +394,7 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
     // A current namesake can carry the old id, so identify restored access
     // by the mapped destination paths of this item.
     await storage.scanSpace(space, undefined, restoredAccess && { byId: new Map(), byPath: restoredAccess.byPath });
+    await storage.restoreAttachmentAccess(space, row.payload?.attachments, mapPath);
     // Backfilled folders can contain pages without having an index page of their own.
     const pageId = row.kind === 'folder' ? row.page_id : await storage.getEntryIdByExactPath(space, destRel);
     if (!pageId) throw notFound('restored page');
@@ -599,6 +600,7 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
     // The members and the visibility are back, so the rules can be checked against them; the paths are relative to the content root and do not change.
     const restoredAccess = await resolveRestoredAccess(row, slug, actor, (oldRel) => oldRel);
     await storage.scanSpace(slug, undefined, restoredAccess);
+    await storage.restoreAttachmentAccess(slug, row.payload?.attachments, (path) => path);
     await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
     await cleanupEmptyTrashDirs(path.dirname(srcAbs));
   });

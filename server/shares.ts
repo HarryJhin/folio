@@ -13,7 +13,7 @@
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ShareLinkInfo, ShareLinkMode } from '../shared/contracts.js';
-import { query, queryOne } from './db/pool.js';
+import { query, queryOne, withTransaction } from './db/pool.js';
 import { publicUrlOrOrigin } from './publicUrl.js';
 
 interface ShareLinkRow {
@@ -67,14 +67,17 @@ export async function createShareLink(
   includeChildren = false,
 ): Promise<ShareLinkInfo> {
   const token = randomBytes(16).toString('hex');
-  await query('INSERT INTO share_links (id, token, page_id, mode, created_by, include_children) VALUES ($1, $2, $3, $4, $5, $6)', [
-    randomUUID(),
-    token,
-    pageId,
-    mode,
-    createdBy,
-    includeChildren,
-  ]);
+  const refs = mode === 'edit' ? await (await import('./fileAccess.js')).initialGuestFileReferences(pageId) : [];
+  await withTransaction(async (client) => {
+    if (mode === 'edit') {
+      const first = await client.query('INSERT INTO guest_edited_pages VALUES ($1) ON CONFLICT DO NOTHING RETURNING page_id', [pageId]);
+      if (first.rowCount) await client.query('INSERT INTO guest_readable_files SELECT $1, unnest($2::text[])', [pageId, refs]);
+    }
+    await client.query(
+      'INSERT INTO share_links (id, token, page_id, mode, created_by, include_children) VALUES ($1, $2, $3, $4, $5, $6)',
+      [randomUUID(), token, pageId, mode, createdBy, includeChildren],
+    );
+  });
   const row = await queryOne<ShareLinkRow>(`${SHARE_SELECT} WHERE sl.token = $1`, [token]);
   return rowToInfo(row!, originFallback);
 }

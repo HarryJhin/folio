@@ -4759,6 +4759,20 @@ async function restrictCopies(
   }
   if (sourceIds.length === 0) return;
   await query(
+    `WITH copies AS (SELECT * FROM unnest($1::text[], $2::text[]) AS m(source_id, copy_id)),
+     guarded AS (INSERT INTO guest_edited_pages SELECT m.copy_id FROM copies m JOIN guest_edited_pages g ON g.page_id = m.source_id
+                 ON CONFLICT DO NOTHING RETURNING page_id)
+     INSERT INTO guest_readable_files SELECT m.copy_id, f.path FROM copies m JOIN guarded g ON g.page_id = m.copy_id
+       JOIN guest_readable_files f ON f.page_id = m.source_id ON CONFLICT DO NOTHING`,
+    [sourceIds, copyIds],
+  );
+  await query(
+    `INSERT INTO asset_page_grants (page_id, sha256)
+     SELECT m.copy_id, g.sha256 FROM unnest($1::text[], $2::text[]) AS m(source_id, copy_id)
+     JOIN asset_page_grants g ON g.page_id = m.source_id ON CONFLICT DO NOTHING`,
+    [sourceIds, copyIds],
+  );
+  await query(
     `INSERT INTO page_access (page_id, owner_id)
      SELECT m.copy_id, $3::uuid
        FROM unnest($1::text[], $2::text[]) AS m(source_id, copy_id)
@@ -5383,6 +5397,7 @@ export function intersectAccessRules(levels: readonly PageAccessRule[]): PageAcc
 
 /** trash_items.payload of every kind but 'space'; absent `access` = nothing in the item was restricted, or the item is older than this record. */
 export interface TrashPagePayload {
+  attachments?: Array<{ path: string; hashes: string[]; guestFiles: string[] | null }>;
   v: 1;
   access?: TrashAccessEntry[];
   /** Page identities reserved while the item can be restored. Index-only ids are claimed back at the restored paths. */
@@ -5606,7 +5621,9 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
   // The `DELETE FROM spaces` below cascades to pages_index and, through it, to every page-access rule of the space.
   const access = await snapshotPageAccess(space, { all: true });
   const ids = await snapshotTrashIds(space, { all: true });
+  const attachments = await snapshotAttachmentAccess(ids);
   return {
+    ...(attachments.length ? { attachments } : {}),
     v: 1,
     ...(access.length > 0 ? { access } : {}),
     ...(ids.length > 0 ? { ids } : {}),
@@ -5632,12 +5649,37 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
   };
 }
 
+async function snapshotAttachmentAccess(ids: TrashIdEntry[]): Promise<NonNullable<TrashPagePayload['attachments']>> {
+  const rows = await query<{ path: string; hashes: string[]; guest_files: string[] | null }>(
+    `SELECT p.path, ARRAY(SELECT sha256 FROM asset_page_grants a WHERE a.page_id = p.id) AS hashes,
+            CASE WHEN g.page_id IS NOT NULL THEN ARRAY(SELECT path FROM guest_readable_files f WHERE f.page_id = p.id) END AS guest_files
+       FROM pages_index p LEFT JOIN guest_edited_pages g ON g.page_id = p.id
+      WHERE p.id = ANY($1::text[]) AND (g.page_id IS NOT NULL OR EXISTS (SELECT 1 FROM asset_page_grants a WHERE a.page_id = p.id))`,
+    [ids.map((item) => item.pageId)],
+  );
+  return rows.map((row) => ({ path: row.path, hashes: row.hashes, guestFiles: row.guest_files }));
+}
+
+export async function restoreAttachmentAccess(space: string, saved: TrashPagePayload['attachments'], mapPath: (path: string) => string | undefined): Promise<void> {
+  for (const item of saved ?? []) {
+    const destPath = mapPath(item.path);
+    const pageId = destPath && await getEntryIdByExactPath(space, destPath);
+    if (!pageId) continue;
+    await query('INSERT INTO asset_page_grants SELECT sha256, $1 FROM assets WHERE sha256 = ANY($2::text[]) ON CONFLICT DO NOTHING', [pageId, item.hashes]);
+    if (item.guestFiles) {
+      await query('INSERT INTO guest_edited_pages VALUES ($1) ON CONFLICT DO NOTHING', [pageId]);
+      await query('INSERT INTO guest_readable_files SELECT $1, unnest($2::text[]) ON CONFLICT DO NOTHING', [pageId, item.guestFiles.map((path) => mapPath(path) ?? path)]);
+    }
+  }
+}
+
 /** The trash payload of a deleted page (or folder): the access rules of the restricted pages it takes along, and (light footprint) the ids its files do not carry; null when there is neither. */
 async function pagePayload(space: string, pageId: string, dirPrefix: string | undefined): Promise<TrashPagePayload | null> {
   const access = await snapshotPageAccess(space, { all: false, pageId, dirPrefix });
   const ids = await snapshotTrashIds(space, { all: false, pageId, dirPrefix });
-  if (access.length === 0 && ids.length === 0) return null;
-  return { v: 1, ...(access.length > 0 ? { access } : {}), ...(ids.length > 0 ? { ids } : {}) };
+  const attachments = await snapshotAttachmentAccess(ids);
+  if (access.length === 0 && ids.length === 0 && attachments.length === 0) return null;
+  return { v: 1, ...(attachments.length ? { attachments } : {}), ...(access.length > 0 ? { access } : {}), ...(ids.length > 0 ? { ids } : {}) };
 }
 
 /**

@@ -705,3 +705,17 @@ describe('renderMarkdownToHtml: a link to a Folio page (round 22.09.2026)', () =
     expect(html).not.toContain('data-folio-nav');
   });
 });
+
+it('scopes attachments in public and shared Markdown and preserves links on other origins', () => {
+  const name = `${'a'.repeat(64)}/report.txt`;
+  const markdown = `![Upload](/a/${name}) [Repo](/files/engineering/data.txt) ![Relative](pic.png) [Elsewhere](https://elsewhere.example/a/${name})`;
+  const publicSite = { space: opts.space, pageUrl: (id: string) => '/p/' + id, homeUrl: '/' };
+  const published = renderMarkdownToHtml(markdown, { ...opts, publicSite, pageId: 'guide' });
+  expect(published).toContain(`src="/api/public/spaces/engineering/pages/guide/assets/${name}"`);
+  expect(published).toContain('href="/files/engineering/data.txt?publicSite=engineering"');
+  expect(published).toContain('src="/files/engineering/architecture/pic.png?publicSite=engineering"');
+  const shared = renderMarkdownToHtml(markdown, { ...opts, shareToken: 'guest', pageId: 'guide' });
+  expect(shared).toContain(`src="/api/share/guest/pages/guide/assets/${name}"`);
+  expect(shared).toContain('href="/files/engineering/data.txt?share=guest"');
+  expect(shared).toContain(`href="https://elsewhere.example/a/${name}"`);
+});

@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { query, queryOne } from './db/pool.js';
+import { queryOne, withTransaction } from './db/pool.js';
 import { classifyForServing, type ServePolicy } from './safeServe.js';
 
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -114,16 +114,20 @@ function sanitizeUrlFilename(name: string): string {
  * and served is derived from the bytes and the file name (safeServe.ts), so a
  * label like `image/png` on SVG or HTML bytes cannot decide how they are shown.
  */
-export async function putAsset(data: Buffer, meta: { mime: string; filename: string }, createdBy: string | null): Promise<StoredAsset> {
+export async function putAsset(data: Buffer, meta: { mime: string; filename: string }, createdBy: string | null, pageId?: string): Promise<StoredAsset> {
   const sha256 = createHash('sha256').update(data).digest('hex');
   const policy = classifyForServing(meta.filename, data);
   if (backendName() === 's3') await s3Put(sha256, data, policy);
   else await localPut(sha256, data);
 
-  await query(
-    `INSERT INTO assets (sha256, mime, size, filename, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (sha256) DO NOTHING`,
-    [sha256, policy.contentType, data.length, meta.filename, createdBy],
-  );
+  await withTransaction(async (client) => {
+    await client.query(
+      `INSERT INTO assets (sha256, mime, size, filename, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (sha256) DO NOTHING`,
+      [sha256, policy.contentType, data.length, meta.filename, createdBy],
+    );
+    if (pageId) await client.query('INSERT INTO asset_page_grants (sha256, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [sha256, pageId]);
+    if (createdBy && !pageId) await client.query('INSERT INTO asset_uploaders (sha256, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [sha256, createdBy]);
+  });
   return { sha256, size: data.length, url: `/a/${sha256}/${sanitizeUrlFilename(meta.filename)}` };
 }
 

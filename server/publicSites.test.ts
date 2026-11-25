@@ -318,7 +318,10 @@ describe('public sites (real PG)', () => {
   });
 
   it('GET /files/<space>/... without a session: a public space\'s public pages and what they reference; 401 for a private space', async () => {
-    const shot = await get(`/files/${pub}/img/shot.png`);
+    const shot = await get(`/files/${pub}/img/shot.png?publicSite=${pub}`);
+    expect(shot.headers['cache-control']).toBe('private, no-store');
+    expect((await get(`/files/${pub}/${secret.relPath}?publicSite=${pub}`)).statusCode).toBe(404);
+    expect((await get(`/files/${priv}/img/shot.png?publicSite=${pub}`)).statusCode).toBe(404);
     expect(shot.statusCode).toBe(200);
     expect(shot.body).toBe('SHOT');
     expect((await get(`/files/${pub}/${guide.relPath}`)).statusCode).toBe(200); // a public page's own file

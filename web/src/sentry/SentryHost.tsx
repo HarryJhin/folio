@@ -1,3 +1,5 @@
+import { useLocation } from 'react-router';
+import { isGuestReading } from '../app/guestReading';
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../app/api';
@@ -10,7 +12,8 @@ import { initSentry, setSentryUser } from '.';
  * Draws nothing.
  */
 export function SentryHost() {
-  const { data } = useQuery({ queryKey: ['auth', 'state'], queryFn: api.getAuthState });
+  const guest = isGuestReading(useLocation().pathname);
+  const { data } = useQuery({ queryKey: guest ? ['guest', 'state'] : ['auth', 'state'], queryFn: api.getAuthState, enabled: !guest });
   const config = data?.sentry;
   const userId = data?.user?.id ?? null;
 

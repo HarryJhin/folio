@@ -124,6 +124,7 @@ async function buildExport(
   const collected = await collectForExport(entry, includeChildren, undefined, allowed);
   const assembled = await assembleMarkdown(collected, {
     boardText,
+    publicSite: allowedPageIds ? { space: entry.space } : undefined,
     baseUrl: requestBaseUrl(request),
     flatten: boolParam(request, 'flatten', true),
     shareToken,
@@ -375,6 +376,7 @@ export function registerPublicSiteExportRoutes(app: FastifyInstance): void {
     if (exportThrottled(request, reply)) return reply;
     const { assembled } = await buildExport(request, entry, AUTHENTICATED_CHILDREN, undefined, false, allowed);
     const pdf = await renderPdf({
+      publicSite: true,
       markdown: assembled.markdown,
       entry,
       baseUrl: requestBaseUrl(request),
@@ -391,7 +393,7 @@ export function registerPublicSiteExportRoutes(app: FastifyInstance): void {
     if (exportThrottled(request, reply)) return reply;
     const { assembled } = await buildExport(request, entry, AUTHENTICATED_CHILDREN, undefined, true, allowed);
     const { renderDocx } = await import('./docx.js');
-    const docx = await renderDocx({ markdown: assembled.markdown, entry, baseUrl: requestBaseUrl(request) });
+    const docx = await renderDocx({ publicSite: true, markdown: assembled.markdown, entry, baseUrl: requestBaseUrl(request) });
     reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     reply.header('Content-Disposition', contentDisposition('attachment', `${slugOf(entry)}.docx`));
     setExportHeaders(reply, assembled.pageCount, assembled.truncation);
