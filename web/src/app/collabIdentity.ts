@@ -1,3 +1,4 @@
+import { isGuestReading } from './guestReading';
 /**
  * Shared piece of collab-awareness identity: editor/collab.ts,
  * diagrams/boardCollab.ts and tables/collab/useTableCollab.ts each open a
@@ -107,7 +108,8 @@ export function resolveAuthedIdentity(user: Pick<User, 'id' | 'name' | 'username
  * is the same failure mode an actually-logged-out visitor already produces.
  */
 export function useOptionalSessionUser(): User | null | undefined {
-  const { data, isError } = useQuery({ queryKey: ['auth', 'state'], queryFn: api.getAuthState });
-  if (isError) return null;
+  const guest = isGuestReading();
+  const { data, isError } = useQuery({ queryKey: guest ? ['guest', 'state'] : ['auth', 'state'], queryFn: api.getAuthState, enabled: !guest });
+  if (guest || isError) return null;
   return data?.user;
 }

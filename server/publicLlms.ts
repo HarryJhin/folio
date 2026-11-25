@@ -208,6 +208,7 @@ async function markdownOf(ctx: SiteContext, entry: PageIndexEntry, lookups?: Ass
     baseUrl: ctx.origin,
     flatten: false,
     pageUrl: pageLinker(ctx),
+    publicSite: { space: entry.space },
     wikilinks: true,
     lookups,
   });

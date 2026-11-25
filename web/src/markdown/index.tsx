@@ -317,6 +317,7 @@ export function Markdown({ markdown, space, pagePath, pageId, shareLinksPageId, 
           space,
           pagePath,
           shareToken,
+          pageId: shareLinksPageId ?? pageId,
           mentionLookup,
           origin,
           publicSite,
@@ -376,7 +377,7 @@ export function Markdown({ markdown, space, pagePath, pageId, shareLinksPageId, 
     // this is only here to force the SECOND pass that shows a title once it lands.
     //
     // wikilinks, same reasoning: the page's link answers arrive after the first render.
-  }, [segments, headings, space, pagePath, shareToken, publicSite, mentionsVersion, linksVersion, wikilinks, isEmbedded, pageId, i18n.language]);
+  }, [segments, headings, space, pagePath, shareToken, publicSite, mentionsVersion, linksVersion, wikilinks, isEmbedded, pageId, shareLinksPageId, i18n.language]);
 
   // The collapsible wrapper/body/stub structure is baked into `rendered`'s
   // HTML by the pipeline's rehypeCollapsibleSections — this only ever

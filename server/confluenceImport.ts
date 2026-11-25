@@ -1,3 +1,5 @@
+import { query } from './db/pool.js';
+import { attachmentHash, markdownAssetHashes } from './markdownAssetReferences.js';
 /**
  * Round 12: Confluence import. Ports the orchestrator's own proven, hands-run
  * migration scripts (a Python REST-walk exporter + a Node turndown-based
@@ -2969,6 +2971,9 @@ async function runImportJob(jobId: string, source: ConfluenceSource, editorIdent
   }
 
   const td = buildTurndownService();
+  const importedHashes = new Set([...attachmentsByPage.values()].flatMap((items) => items.map((item) => attachmentHash(item.url))));
+  const boundPageIds: string[] = [];
+  const boundHashes: string[] = [];
   const spaceDir = storage.getSpaceDir(spaceSlug);
   for (const [id, page] of pages) {
     const relPath = relPaths.get(id);
@@ -3021,6 +3026,12 @@ async function runImportJob(jobId: string, source: ConfluenceSource, editorIdent
     if (order >= 0) fm.order = (order + 1) * 10;
 
     const body = composePageBody(page.title, md, editorIdentity.lang);
+    for (const sha of await markdownAssetHashes(body)) {
+      if (importedHashes.has(sha)) {
+        boundPageIds.push(pageId);
+        boundHashes.push(sha);
+      }
+    }
     const out = matter.stringify(body, fm);
     const absPath = path.join(spaceDir, relPath);
     await fs.mkdir(path.dirname(absPath), { recursive: true });
@@ -3030,6 +3041,10 @@ async function runImportJob(jobId: string, source: ConfluenceSource, editorIdent
 
   await mergeConfluenceMap(spaceSlug, Object.fromEntries([...relPaths].filter(([pid]) => pages.has(pid))));
   await storage.scanSpace(spaceSlug);
+  if (boundHashes.length) await query(
+    'INSERT INTO asset_page_grants (page_id, sha256) SELECT * FROM unnest($1::text[], $2::text[]) ON CONFLICT DO NOTHING',
+    [boundPageIds, boundHashes],
+  );
   await git.commitAll(storage.getRepoDir(spaceSlug), `docs: import from Confluence «${root.title}»`, editorIdentity);
 
   setJob(jobId, { status: 'done', currentTitle: null });

@@ -1,3 +1,4 @@
+import { attachmentUrl } from '@shared/attachmentUrls';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -89,7 +90,7 @@ export function PageChrome({ pageId, space, icon, cover, canEdit, verification, 
   });
 
   const uploadCover = useMutation({
-    mutationFn: (file: File) => api.uploadAsset(space, file),
+    mutationFn: (file: File) => api.uploadAsset(space, file, pageId),
     onSuccess: (result) => {
       setOptimisticCover(result.url);
       save.mutate({ cover: result.url });
@@ -126,7 +127,7 @@ export function PageChrome({ pageId, space, icon, cover, canEdit, verification, 
           onMouseLeave={() => setHoveringCover(false)}
         >
           {/* eslint-disable-next-line jsx-a11y/img-redundant-alt -- decorative banner, real title is the body's own H1 */}
-          <img src={displayCover} alt="" className="h-full w-full object-cover" />
+          <img src={attachmentUrl(displayCover, { space, pageId })} alt="" className="h-full w-full object-cover" />
           {canEdit && (hoveringCover || busy) && (
             <div className="absolute inset-0 flex items-end justify-end gap-1.5 bg-black/10 p-2">
               <button

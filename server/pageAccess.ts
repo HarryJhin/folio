@@ -1,3 +1,4 @@
+import { refreshGuestSockets } from './guestSockets.js';
 import type { PageAccessGrant, PageAccessGrantRole, PageAccessGroup, PageAccessInfo, SpaceRole, User } from '../shared/contracts.js';
 import type { PageIndexEntry } from './storage.js';
 import { query, queryOne, withTransaction } from './db/pool.js';
@@ -248,6 +249,7 @@ export async function setAccess(actor: User, entry: PageIndexEntry, visibility: 
       }
     });
   }
+  refreshGuestSockets();
   await auditGroupGrantChanges(actor, entry, before, groupGrants);
 }
 

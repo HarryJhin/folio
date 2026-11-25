@@ -1,3 +1,4 @@
+import { isGuestReading } from './guestReading';
 import { setOfflineReaderAccount } from './offline/savedDocuments';
 import {
   OFFLINE_READER_ACCOUNT_HEADER,
@@ -375,7 +376,7 @@ async function request<T>(input: string, init?: RequestInit, offlineAccount?: st
  * No retries either: a 404 is an answer, and the pages are cheap to ask for again.
  */
 async function publicGet<T>(input: string): Promise<T> {
-  return publicRequest<T>(input, { credentials: 'same-origin' });
+  return publicRequest<T>(input, { credentials: 'omit' });
 }
 
 /**
@@ -386,7 +387,7 @@ async function publicGet<T>(input: string): Promise<T> {
 async function publicPost<T>(input: string, body: unknown): Promise<T> {
   return publicRequest<T>(input, {
     method: 'POST',
-    credentials: 'same-origin',
+    credentials: 'omit',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -892,7 +893,9 @@ export const api = {
   // ---------- auth (round 2) ----------
 
   /** Public. Drives the client auth gate: needsSetup | logged out | logged in. */
-  getAuthState: () => request<AuthState>('/api/auth/state', { cache: 'no-store', headers: visitorHeaders() }),
+  getAuthState: (): Promise<AuthState> => isGuestReading()
+    ? Promise.resolve({ needsSetup: false, user: null, memberships: {}, google: false })
+    : request<AuthState>('/api/auth/state', { cache: 'no-store', headers: visitorHeaders() }),
 
   recordSessionActivity: () => request<{ expiresAt: string }>('/api/me/session/activity', { method: 'POST', cache: 'no-store', redirect: 'manual' }),
 
@@ -1069,10 +1072,10 @@ export const api = {
    * uploadAsset in editor/uploads.ts (not imported from here: app/ and
    * editor/ are separate ownership areas, kept independent deliberately).
    */
-  uploadAsset: (space: string, file: File) => {
+  uploadAsset: (space: string, file: File, pageId?: string) => {
     const body = new FormData();
     body.append('file', file, file.name);
-    return request<UploadAssetResponse>(`/api/spaces/${encodeURIComponent(space)}/assets`, { method: 'POST', body });
+    return request<UploadAssetResponse>(`/api/spaces/${encodeURIComponent(space)}/assets${pageId ? `?page=${encodeURIComponent(pageId)}` : ''}`, { method: 'POST', body });
   },
 
   /**
@@ -1214,7 +1217,7 @@ export const api = {
    * nothing on the public /share/:token route listens for it (no
    * AuthProvider mounted there to react to it).
    */
-  getSharedPage: (token: string) => request<SharedPagePayload>(`/api/share/${encodeURIComponent(token)}`),
+  getSharedPage: (token: string) => request<SharedPagePayload>(`/api/share/${encodeURIComponent(token)}`, { credentials: 'omit' }),
 
   // ---------- git browser via saved PAT (round 11) ----------
 

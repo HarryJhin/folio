@@ -1205,7 +1205,7 @@ export const updateSpaceAssetModeBodySchema = z.object({ assetMode: spaceAssetMo
 export type UpdateSpaceAssetModeBody = z.infer<typeof updateSpaceAssetModeBodySchema>;
 
 /**
- * POST /api/spaces/:space/assets response. `url` is always a ready-to-use URL on
+ * POST /api/spaces/:space/assets[?page=<id>] response. A page-scoped upload binds the bytes to a page the caller can edit. `url` is always a ready-to-use URL on
  * this origin. `path` is present ONLY for a repo-mode upload: the file's path
  * relative to the space's content root (e.g. `assets/diagram.png`), which the
  * editor turns into a page-relative Markdown link so the image also renders on

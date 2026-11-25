@@ -85,6 +85,7 @@ import * as graph from './graph.js';
 import { userViewer } from './accessSql.js';
 import * as groupRoutes from './groups/routes.js';
 import * as assets from './assets.js';
+import { bindSubmittedAssets } from './assetRoute.js';
 import * as git from './git.js';
 import * as gitSync from './gitSync.js';
 import { inspectFilePageUpload, replaceFilePage, restoreFilePageVersion } from './filePages.js';
@@ -93,7 +94,7 @@ import * as gitTree from './gitTree.js';
 import { GitTreePathNotFoundError } from './gitTree.js';
 import * as shares from './shares.js';
 import { resolveShareScope } from './export/shareScope.js';
-import { shareMayReadFile } from './fileAccess.js';
+import { grantUploadedRepoFile, shareMayReadFile } from './fileAccess.js';
 import { subtreeFromCollected } from './export/collect.js';
 import * as invites from './invites.js';
 import * as confluenceImport from './confluenceImport.js';
@@ -812,6 +813,8 @@ export function registerRoutes(app: FastifyInstance): void {
     const { space } = request.params as { space: string };
     await session.requireSpaceRole(request, space, 'editor');
     session.requireWriteScope(request);
+    const pageId = queryString(request.query, 'page');
+    if (pageId && (await session.requirePageRole(request, pageId, 'editor')).space !== space) throw notFound('page');
     const file = await request.file();
     if (!file) throw badRequest('no file uploaded (expected multipart field "file")');
     const buffer = await file.toBuffer();
@@ -820,13 +823,14 @@ export function registerRoutes(app: FastifyInstance): void {
     let result: UploadAssetResponse;
     if (info?.assetMode === 'repo') {
       result = await storage.saveAssetIntoRepo(space, file.filename, buffer);
+      if (pageId && result.path) await grantUploadedRepoFile(pageId, result.path);
       // A new file in the working tree: attribute it to the uploader and let the
       // standard debounced auto-commit pick it up (commitAll stages everything,
       // so assets/ rides along with the page edit that references it).
       gitSync.recordEditor(space, { name: request.authUser!.name, email: request.authUser!.email });
       gitSync.noteActivity(space);
     } else {
-      result = await assets.putAsset(buffer, { mime: file.mimetype, filename: file.filename }, request.authUser!.id);
+      result = await assets.putAsset(buffer, { mime: file.mimetype, filename: file.filename }, request.authUser!.id, pageId || undefined);
     }
     reply.status(201);
     return result;
@@ -944,6 +948,7 @@ export function registerRoutes(app: FastifyInstance): void {
         console.error(`[offline] created page ${meta.id} but could not store the client's Y.Doc snapshot; the room will seed from the file:`, err);
       });
     }
+    if (clientState?.docBody) await bindSubmittedAssets(request.authUser!, meta.id, clientState.docBody);
     const after = snapshotPageChange(await storage.requireEntry(meta.id));
     await recordPageChange(request.authUser!.id, 'page.create', meta.id, body.space, undefined, after);
     gitSync.recordEditor(body.space, { name: request.authUser!.name, email: request.authUser!.email });
@@ -1043,7 +1048,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const asciiName = `${entry.title}.${ext}`.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '') || `document.${ext}`;
     const encodedName = encodeURIComponent(`${entry.title}.${ext}`);
     reply.header('Content-Type', contentType);
-    reply.header('Cache-Control', 'private');
+    reply.header('Cache-Control', 'private, no-store');
     reply.header(
       'Content-Disposition',
       `${download ? 'attachment' : 'inline'}; filename="${asciiName}"; filename*=UTF-8''${encodedName}`,
@@ -1094,7 +1099,7 @@ export function registerRoutes(app: FastifyInstance): void {
     const baseName = pathPosix.basename(revision.path);
     const asciiName = baseName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '') || `document.${ext}`;
     reply.header('Content-Type', contentType);
-    reply.header('Cache-Control', 'private, max-age=31536000, immutable'); // a commit never changes
+    reply.header('Cache-Control', 'private, no-store');
     reply.header('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(baseName)}`);
     return reply.send(revision.bytes);
   });
@@ -1208,6 +1213,7 @@ export function registerRoutes(app: FastifyInstance): void {
         throw badRequest('markdown is required for a document page');
       }
       gitSync.recordEditor(entry.space, { name: user.name, email: user.email });
+      const previousFields = [entry.icon, entry.cover];
       if (body.markdown === undefined) {
         // icon/cover/order-only update (round 5 picker; round 22 tree "Up/Down"):
         // body untouched, immediate persist — neither icon/cover nor order is part of
@@ -1219,6 +1225,7 @@ export function registerRoutes(app: FastifyInstance): void {
           : await storage.readFreshDocBody(id);
         if (body.order !== undefined) await storage.setDocOrder(entry, body.order, currentBody);
         await storage.setDocIconCover(entry, icon, cover, currentBody);
+        await bindSubmittedAssets(user, id, '', [body.icon, body.cover], '', previousFields);
         gitSync.noteActivity(entry.space);
         return storage.toPageMeta(await storage.requireEntry(id));
       }
@@ -1236,13 +1243,16 @@ export function registerRoutes(app: FastifyInstance): void {
       // (SHELL's tree reorder always sends order alone, same shape as an icon/cover-only
       // PUT) — not handled in this branch, same as icon/cover's own precedent above only
       // fully applies to the no-markdown path.
+      let previousBody = '';
+      const rememberBody = markdownBody.includes('/a/') ? (before: string) => { previousBody = before; } : undefined;
       let result;
       try {
-        result = await collab.editDocBody(id, markdownBody, iconOverride, coverOverride, body.baseRevision);
+        result = await collab.editDocBody(id, markdownBody, iconOverride, coverOverride, body.baseRevision, rememberBody);
       } catch (err) {
         if (err instanceof collab.RevisionConflictError) return reply.status(409).send({ error: err.message, code: err.code, currentRevision: err.currentRevision });
         throw err;
       }
+      await bindSubmittedAssets(user, id, markdownBody, [iconOverride, coverOverride], previousBody, previousFields);
       gitSync.noteActivity(entry.space);
       return result;
     }

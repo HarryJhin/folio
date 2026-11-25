@@ -46,7 +46,7 @@ export function publicPageUrl(site: PublicSiteRef, pageId: string): string {
 
 /** `/files/<space>/<path>` — an uploaded file or a pdf/office page's bytes; the server serves it to anonymous visitors of a public space. */
 export function publicFileUrl(space: string, path: string): string {
-  return `/files/${encodeURIComponent(space)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+  return `/files/${encodeURIComponent(space)}/${path.split('/').map(encodeURIComponent).join('/')}?publicSite=${encodeURIComponent(space)}`;
 }
 
 /**

@@ -508,7 +508,7 @@ export default function BoardCanvas({ pageId, shareToken, shareMode, onEditingCh
   // its mode, path and title.
   const useCollab = true;
   const collabUrl = useMemo(() => `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/collab`, []);
-  const collabParams = useMemo(() => (shareToken ? { share: shareToken } : undefined), [shareToken]);
+  const collabParams = useMemo(() => (shareToken ? { share: shareToken, as: 'guest' } : undefined), [shareToken]);
   // Declared BEFORE the session hook on purpose: on unmount React runs effect
   // cleanups in declaration order, and the session's own cleanup closes the
   // Y.Doc's persistence (and the socket). The still-pending throttled write —

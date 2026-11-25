@@ -102,6 +102,26 @@ function renderShare(initialPath: string) {
   );
 }
 
+describe('SharedPageView file readers', () => {
+  it('opens a shared PDF in the reader using the token on the encoded repository path', async () => {
+    stubFetchByUrl({ '/api/share/t1': docPayload({ kind: 'pdf', path: 'files/Plan #1.pdf', title: 'Plan' }) });
+    renderShare('/share/t1');
+    const frame = await screen.findByTitle('Plan');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame.getAttribute('src')).toBe('/files/sp/files/Plan%20%231.pdf?share=t1');
+  });
+
+  it('loads a shared Office child through its own scoped file URL without sending session credentials', async () => {
+    const fetchMock = stubFetchByUrl({
+      '/api/share/t1?page=c1': docPayload({ id: 'c1', kind: 'office', path: 'files/Cost & date.xlsx' }, WITH_TREE),
+    });
+    renderShare('/share/t1/p/c1');
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/files/sp/files/Cost%20%26%20date.xlsx?share=t1', {
+      credentials: 'omit', cache: 'no-store',
+    }));
+  });
+});
+
 describe('SharedPageView — product mark', () => {
   it('offers a "What is Folio?" badge with the tagline and a followable link to the product site', async () => {
     stubFetchByUrl({ '/api/share/t1': docPayload({}) });
@@ -152,7 +172,7 @@ describe('SharedPageView — subtree navigation', () => {
     fireEvent.click(Array.from(nav.querySelectorAll('a')).find((a) => a.getAttribute('href') === '/share/t1/p/c1')!);
 
     await waitFor(() => expect(screen.getByTestId('markdown-body').textContent).toContain('Child body.'));
-    expect(fetchMock).toHaveBeenCalledWith('/api/share/t1?page=c1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/share/t1?page=c1', { credentials: 'omit' });
 
     const after = screen.getAllByRole('navigation', { name: 'Pages' })[0];
     const current = Array.from(after.querySelectorAll('a')).find((a) => a.getAttribute('aria-current') === 'page');

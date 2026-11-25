@@ -224,6 +224,7 @@ async function openLockedPage(browser: Browser, opts: { allowRemote: boolean }):
 }
 
 export interface RenderPdfOptions {
+  publicSite?: boolean;
   markdown: string;
   entry: PageIndexEntry;
   baseUrl: string;

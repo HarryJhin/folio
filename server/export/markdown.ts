@@ -1,3 +1,4 @@
+import { attachmentUrl } from '../../shared/attachmentUrls.js';
 /**
  * Round 23 (EXPORT) — markdown assembly. This is Stage 1's core: everything
  * `GET /api/pages/:id/export.md` and the agent-facing `GET /share/:token.md`
@@ -204,6 +205,8 @@ interface IncludedPage {
 }
 
 interface RewriteCtx {
+  sourcePageId?: string;
+  publicSite?: { space: string };
   baseUrl: string;
   space: string;
   /** directory of the page whose body is being rewritten */
@@ -252,9 +255,12 @@ export function rewriteHref(hrefRaw: string, ctx: RewriteCtx): string {
     const mapped = ctx.ownAnchors.get(slugifyHeading(decodeURIComponent(href.slice(1))));
     return mapped ? `#${mapped}` : href;
   }
+  const ctxForAsset = { ...ctx, pageId: ctx.sourcePageId, origin: ctx.baseUrl };
+  const scoped = attachmentUrl(href, ctxForAsset);
+  if (scoped !== href) return ctx.baseUrl + scoped;
   if (href.startsWith('//')) return href; // protocol-relative — already absolute enough
   if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return href; // http:, mailto:, data:, ...
-  if (href.startsWith('/')) return withShare(`${ctx.baseUrl}${href}`, href.startsWith('/files/') ? ctx.shareToken : undefined);
+  if (href.startsWith('/')) return ctx.baseUrl + href;
 
   const hashIdx = href.indexOf('#');
   const frag = hashIdx === -1 ? '' : href.slice(hashIdx);
@@ -288,7 +294,7 @@ export function rewriteHref(hrefRaw: string, ctx: RewriteCtx): string {
     const byName = resolveWikilinkPath(ctx.files.wikiIndex, ctx.dirPath, decodeURI(pathPart));
     if (byName !== null) target = byName;
   }
-  return withShare(`${ctx.baseUrl}/files/${ctx.space}/${target}${queryPart}${frag}`, ctx.shareToken);
+  return ctx.baseUrl + attachmentUrl(`/files/${ctx.space}/${target}${queryPart}${frag}`, ctxForAsset);
 }
 
 const INLINE_LINK_RE = /(!?)\[((?:[^\][\\]|\\.|\[[^\]]*\])*)\]\(\s*(<[^>]*>|[^()\s]*(?:\([^()]*\)[^()\s]*)*)((?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?)\s*\)/g;
@@ -464,6 +470,7 @@ export async function pageSourceMarkdown(entry: PageIndexEntry, opts: PageSource
 // ---------------------------------------------------------------------------
 
 export interface AssembleOptions {
+  publicSite?: { space: string };
   /** Absolute prod base, no trailing slash (see server/publicUrl.ts). */
   baseUrl: string;
   /** false for PDF/DOCX — see PageSourceOptions.boardText for why. */
@@ -580,6 +587,8 @@ export async function assembleMarkdown(collected: CollectedSubtree, opts: Assemb
       baseUrl: opts.baseUrl,
       space,
       dirPath: posixParent(s.page.entry.relPath),
+      sourcePageId: s.page.entry.id,
+      publicSite: opts.publicSite,
       idByPath,
       included,
       ownAnchors: s.anchors,

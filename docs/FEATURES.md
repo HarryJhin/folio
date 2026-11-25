@@ -647,13 +647,22 @@ restrictions, nor anything below it: such a page is shared only by a link
 made for that page itself. This is checked on every visit, so restricting a
 page later also removes it from links that already exist.
 
-A signed-in reader who can open the page is sent from `/share/<token>` to the
-normal page in their own account, with their own rights; add `?as=guest` to
-keep the guest view. Of the space's
-files, a guest gets only those of the pages the link covers and the images
-and attachments those pages embed or link to. A link is a credential, so
-links are listed, created and revoked only in the browser, never with an API
-token.
+Opening a share URL in the browser uses the guest view and the permissions of
+that link. The normal page URL opens with the account's own rights. Only a
+browser session can list, create and revoke share links.
+
+Raw attachment URLs require a current account credential and access to the
+attachment. Public and shared pages render separate attachment URLs. Each
+request checks the current page grant, its attachment binding and whether the
+page still displays or links to those bytes. Uploading into an editor or a
+page cover binds the upload to that page. API clients can pass `?page=<id>`
+when uploading, or save an upload of their own through the authenticated page API.
+
+An edit link lets a guest change page content. Repository attachments that the
+page could expose are recorded when its first edit link is created. A signed-in
+editor can add another attachment by uploading it to that page. Earlier edit
+links without a recorded set keep their editing access. Re-uploading the
+intended files from the editor authorizes them for those links.
 
 Edits made by a guest through such a link reach Git with the matching
 authorship.
