@@ -239,7 +239,13 @@ export interface SpaceList {
   defaultSpace?: string;
 }
 
+export const spaceFirstViewSchema = z.enum(['graph', 'home']);
+export type SpaceFirstView = z.infer<typeof spaceFirstViewSchema>;
+export const setSpaceFirstViewSchema = z.object({ firstView: spaceFirstViewSchema });
+
 export interface SpaceInfo {
+  /** First view on entry. Existing spaces default to the graph. */
+  firstView?: SpaceFirstView;
   slug: string;
   name: string;
   pageCount: number;
