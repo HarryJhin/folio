@@ -280,10 +280,10 @@ describe('CreateSpaceDialog — Obsidian vault note and light footprint', () => 
   });
 });
 
-it('gives the creator a bookmarkable home outside a fixed switcher', async () => {
+it('gives the creator a bookmarkable first view outside a fixed switcher', async () => {
   stubApi();
   renderDialog(true);
   fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'New space' } });
   fireEvent.click(screen.getByRole('button', { name: 'Create' }));
-  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('/s/new-space/home'));
+  await waitFor(() => expect(screen.getByRole('status').textContent).toBe('/s/new-space/graph'));
 });

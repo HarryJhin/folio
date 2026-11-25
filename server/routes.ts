@@ -11,6 +11,7 @@ import {
   createShareLinkBodySchema,
   updateShareLinkBodySchema,
   updateSpaceAssetModeBodySchema,
+  setSpaceFirstViewSchema,
   updateScanSettingsBodySchema,
   createSpaceGit,
   resolveGitConflictBody,
@@ -781,6 +782,17 @@ export function registerRoutes(app: FastifyInstance): void {
     await storage.setSpaceAssetMode(space, body.assetMode);
     recordAudit(request.authUser!.id, 'space.asset_mode', space, { assetMode: body.assetMode });
     return { slug: space, assetMode: body.assetMode };
+  });
+
+  app.put('/api/spaces/:space/first-view', async (request) => {
+    assertNotDemo('Changing the first view of a space');
+    session.requireCookieAuth(request);
+    const { space } = request.params as { space: string };
+    await session.requireSpaceRole(request, space, 'admin');
+    const body = parseBody(setSpaceFirstViewSchema, request.body);
+    await storage.setSpaceFirstView(space, body.firstView);
+    recordAudit(request.authUser!.id, 'space.first_view', space, body);
+    return body;
   });
 
   /**

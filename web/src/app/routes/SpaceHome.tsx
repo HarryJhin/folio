@@ -11,7 +11,7 @@ import { NoAccess } from './NoAccess';
 import '../i18n/register';
 
 /**
- * `/s/:space` — the space's front door, staying at the stable space-root URL.
+ * `/s/:space/home` — the space's home document or a listing of its root.
  *
  * Normally that is `index.md`. QA-3 P1 #2: it isn't always. A space created
  * from an ordinary git repository has a `README.md` at its root and no

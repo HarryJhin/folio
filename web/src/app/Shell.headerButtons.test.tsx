@@ -96,11 +96,11 @@ function harness() {
       root.render(
         <QueryClientProvider client={queryClient}>
           <ToastProvider>
-            <MemoryRouter initialEntries={['/s/test-space']}>
+            <MemoryRouter initialEntries={['/s/test-space/p/p1']}>
               <CurrentPageIdContext.Provider value={pageId}>
                 <Routes>
                   <Route path="/s/:space" element={<Shell />}>
-                    <Route index element={<RoutedFakePageContent />} />
+                    <Route path="p/:id" element={<RoutedFakePageContent />} />
                   </Route>
                 </Routes>
               </CurrentPageIdContext.Provider>

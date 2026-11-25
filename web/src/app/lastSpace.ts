@@ -1,5 +1,11 @@
 import type { SpaceInfo, SpaceList } from '@shared/contracts';
 
+export function spaceEntryPath(space: Pick<SpaceInfo, 'slug' | 'firstView'>, hash = ''): string {
+  // Existing bookmarks with a heading or block fragment refer to the home document.
+  const view = hash ? 'home' : space.firstView ?? 'graph';
+  return `/s/${encodeURIComponent(space.slug)}/${view}`;
+}
+
 export function homeSpaces(data?: SpaceList): SpaceInfo[] {
   return data?.spaces.slice(0, data.primarySpaceCount ?? data.navigationSpaceCount) ?? [];
 }

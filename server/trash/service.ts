@@ -567,9 +567,9 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
     const scanIgnore = Array.isArray(snapshot?.scanIgnore) ? snapshot!.scanIgnore.filter((e): e is string => typeof e === 'string') : [];
     const name = snapshot?.name ?? (await readFolioName(repoDirAbs, origSlug, rootPath, lightFootprint)) ?? humanizeSlug(origSlug);
     await query(
-      `INSERT INTO spaces (slug, name, repo_url, branch, root_path, status, visibility, asset_mode, scan_ignore, light_footprint)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [slug, name, snapshot?.repoUrl ?? null, snapshot?.branch ?? 'main', rootPath, snapshot?.repoUrl ? 'clean' : 'local', validVisibility(snapshot?.visibility), validAssetMode(snapshot?.assetMode), scanIgnore, lightFootprint],
+      `INSERT INTO spaces (slug, name, repo_url, branch, root_path, status, visibility, asset_mode, scan_ignore, light_footprint, first_view)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [slug, name, snapshot?.repoUrl ?? null, snapshot?.branch ?? 'main', rootPath, snapshot?.repoUrl ? 'clean' : 'local', validVisibility(snapshot?.visibility), validAssetMode(snapshot?.assetMode), scanIgnore, lightFootprint, snapshot?.firstView === 'home' ? 'home' : 'graph'],
     );
     await storage.setSpaceRootPathCache(slug, rootPath, lightFootprint);
     await restorePublicSettings(slug, snapshot?.publicSettings);

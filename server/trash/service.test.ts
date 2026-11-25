@@ -221,6 +221,7 @@ describe('trash service (trash round, real fs + real PG)', () => {
     const spaceAdmin = await authStore.createUser({ email: `${RUN}-sadm@t.local`, name: 'Space Admin', passwordHash: 'x', isAdmin: false });
     const editor = await authStore.createUser({ email: `${RUN}-sedit@t.local`, name: 'Space Editor', passwordHash: 'x', isAdmin: false });
     const sp = await makeSpace('gamma');
+    await storage.setSpaceFirstView(sp.slug, 'home');
     await authStore.setMembership(sp.slug, spaceAdmin.id, 'admin');
     await authStore.setMembership(sp.slug, editor.id, 'editor');
     await storage.createPage({ space: sp.slug, parentPath: '', title: 'Deep Page', kind: 'doc' });
@@ -247,6 +248,7 @@ describe('trash service (trash round, real fs + real PG)', () => {
     expect(visible.items.some((i) => i.id === row!.id)).toBe(true);
 
     const res = await restoreTrashItem(spaceAdmin, row!.id);
+    expect((await storage.getSpaceInfo(sp.slug))?.firstView).toBe('home');
     expect(res).toEqual({ restoredPath: '', pageId: sp.slug, space: sp.slug, renamed: false });
 
     expect(await storage.spaceExists(sp.slug)).toBe(true);

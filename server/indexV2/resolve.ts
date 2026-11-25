@@ -133,7 +133,7 @@ export type AppLinkRef = { space: string; kind: 'page'; id: string } | { space: 
 
 const APP_PAGE_RE = /^\/s\/([^/]+)\/p\/([^/]+)\/?$/;
 const APP_DIR_RE = /^\/s\/([^/]+)\/d\/(.+?)\/?$/;
-const APP_SPACE_RE = /^\/s\/([^/]+)\/?$/;
+const APP_SPACE_RE = /^\/s\/([^/]+)(?:\/home)?\/?$/;
 
 /** Cheap shape test (no host check): a root-relative or absolute http(s) URL whose path starts with `/s/<space>`. */
 export const APP_LINK_SHAPE = /^(?:https?:\/\/[^/?#\s]+)?\/s\/[^/?#\s]+/i;
