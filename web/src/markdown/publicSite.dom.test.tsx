@@ -97,8 +97,8 @@ describe('<Markdown publicSite>', () => {
   it('serves images and files from the public /files route, with no share token', () => {
     vi.stubGlobal('fetch', vi.fn());
     const { container } = renderMarkdown('![shot](img/a.png)\n\n[spec](spec.pdf)', makeSite());
-    expect(container.querySelector('img')!.getAttribute('src')).toBe('/files/eng/guide/img/a.png');
-    expect(container.querySelector('a[href^="/files/"]')!.getAttribute('href')).toBe('/files/eng/guide/spec.pdf');
+    expect(container.querySelector('img')!.getAttribute('src')).toBe('/files/eng/guide/img/a.png?publicSite=eng');
+    expect(container.querySelector('a[href^="/files/"]')!.getAttribute('href')).toBe('/files/eng/guide/spec.pdf?publicSite=eng');
   });
 
   it('shows a neutral note for a form embed instead of fetching the form', () => {

@@ -87,6 +87,66 @@ describe('trash service (trash round, real fs + real PG)', () => {
   // deletePage hook + doc restore
   // -----------------------------------------------------------------------
 
+  it('restores attachment permissions for ordinary Markdown pages', async () => {
+    const sp = await makeSpace('attachment-restore');
+    const page = await storage.createPage({ space: sp.slug, parentPath: '', title: 'Guide', kind: 'doc' });
+    const { putAsset } = await import('../assets.js');
+    const file = await putAsset(Buffer.from('recover this attachment'), { filename: 'report.txt', mime: 'text/plain' }, admin.id, page.id);
+    await storage.writeDocBody(page.id, `[Report](${file.url})`);
+    await storage.deletePage(page.id, admin.id);
+    const row = await rowForPage(page.id);
+    const restored = await restoreTrashItem(admin, row!.id);
+    expect(await query('SELECT sha256 FROM asset_page_grants WHERE page_id = $1', [restored.pageId])).toEqual([{ sha256: file.sha256 }]);
+  });
+
+  it.each([false, true])('keeps guest file grants bounded throughout a restore (legacy %s)', async (legacy) => {
+    const { publicMayReadFile } = await import('../fileAccess.js');
+    const sp = await makeSpace(`restore-guest-${legacy}`);
+    await authStore.setSpaceVisibility(sp.slug, 'public');
+    const page = await storage.createPage({ space: sp.slug, parentPath: '', title: 'Guide', kind: 'doc' });
+    await storage.writeDocBody(page.id, '![Report](assets/report.png)');
+    await query('INSERT INTO guest_edited_pages VALUES ($1)', [page.id]);
+    await storage.deletePage(page.id, admin.id);
+    const row = await rowForPage(page.id);
+    if (legacy) await query('UPDATE trash_items SET payload = NULL, legacy_attachment_scope = true WHERE id = $1', [row!.id]);
+    const restore = storage.restoreAttachmentAccess;
+    let checked = false;
+    const interleave = vi.spyOn(storage, 'restoreAttachmentAccess').mockImplementation(async (...args) => {
+      expect(await publicMayReadFile(sp.slug, 'assets/report.png')).toBe(false);
+      await expect(purgeTrashItem(admin, row!.id)).rejects.toMatchObject({ status: 409 });
+      expect(await emptyTrash(admin, sp.slug)).toEqual({ removed: 0 });
+      checked = true;
+      return restore(...args);
+    });
+    try {
+      await restoreTrashItem(admin, row!.id);
+    } finally {
+      interleave.mockRestore();
+    }
+    expect(checked).toBe(true);
+    expect(await publicMayReadFile(sp.slug, 'assets/report.png')).toBe(false);
+    expect(await query('SELECT 1 FROM restoring_attachment_scopes WHERE trash_id = $1', [row!.id])).toEqual([]);
+  });
+
+  it('resumes an indexed restore after an interrupted attachment write', async () => {
+    const sp = await makeSpace('resume-attachment');
+    const page = await storage.createPage({ space: sp.slug, parentPath: '', title: 'Guide', kind: 'doc' });
+    await query('INSERT INTO guest_edited_pages VALUES ($1)', [page.id]);
+    await storage.deletePage(page.id, admin.id);
+    const row = (await rowForPage(page.id))!;
+    const interrupted = vi.spyOn(storage, 'restoreAttachmentAccess').mockRejectedValueOnce(new Error('interrupted'));
+    try {
+      await expect(restoreTrashItem(admin, row.id)).rejects.toThrow('interrupted');
+    } finally {
+      interrupted.mockRestore();
+    }
+    expect(await query('SELECT 1 FROM restoring_attachment_scopes WHERE trash_id = $1', [row.id])).toHaveLength(1);
+    const restored = await restoreTrashItem(admin, row.id);
+    expect(restored.pageId).toBe(page.id);
+    expect(await query('SELECT 1 FROM guest_edited_pages WHERE page_id = $1', [restored.pageId])).toHaveLength(1);
+    expect(await rowForPage(page.id)).toBeUndefined();
+  });
+
   it('deleting a doc records a trash row (kind/path/title/deleted_by) and moves the file into data/.trash', async () => {
     const sp = await makeSpace('doc-basic');
     const page = await storage.createPage({ space: sp.slug, parentPath: '', title: 'Alpha', kind: 'doc' });

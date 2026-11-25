@@ -1,3 +1,4 @@
+import { attachmentUrl } from '@shared/attachmentUrls';
 /** Path helpers shared by the live-preview widgets. Pure, no DOM, unit-tested. */
 import { isDirIndexName, stripDocExt } from '@shared/mdx';
 
@@ -52,10 +53,11 @@ export function resolveAssetSrc(
   shareToken?: string,
   /** The index's answer for a src it resolved by name (Obsidian: `x.png` -> `Attachments/x.png`); undefined keeps the path as written. */
   attachment?: (src: string) => string | undefined,
+  pageId?: string,
 ): string {
   const raw = src.trim().replace(/^<(.*)>$/, '$1');
   if (!raw) return '';
-  if (ABSOLUTE.test(raw) || raw.startsWith('/')) return raw;
+  if (ABSOLUTE.test(raw) || raw.startsWith('/')) return attachmentUrl(raw, { space, pageId, shareToken, origin: globalThis.location?.origin });
   const dir = dirname(pagePath);
   const joined = attachment?.(raw) ?? normalizeRelative(dir ? `${dir}/${raw}` : raw);
   const url = `/files/${space}/${joined}`;

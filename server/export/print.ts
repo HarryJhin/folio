@@ -115,7 +115,7 @@ const IMG_RE = /<img\b([^>]*?)\ssrc="([^"]*)"([^>]*)>/gi;
  * data URI — R23 addendum 3: "the board's SVG is put into the flow as it is
  * (chromium renders SVG natively) ... it is not split between pages".
  */
-export async function inlineLocalAssets(html: string, space: string, baseUrl: string): Promise<string> {
+export async function inlineLocalAssets(html: string, space: string, baseUrl: string, publicSite = false): Promise<string> {
   const spaceDir = storage.getSpaceDir(space);
   const prefixes = [`${baseUrl}/files/${space}/`, `/files/${space}/`];
 
@@ -137,6 +137,10 @@ export async function inlineLocalAssets(html: string, space: string, baseUrl: st
       continue;
     }
 
+    if (publicSite && !(await (await import('../fileAccess.js')).publicExportMayReadFile(space, relPath))) {
+      replacements.set(whole, '');
+      continue;
+    }
     const abs = path.resolve(spaceDir, relPath);
     if (!insideSpace(spaceDir, abs)) continue;
 
@@ -241,6 +245,7 @@ function markWideTables(html: string): string {
 }
 
 export interface PrintDocumentOptions {
+  publicSite?: boolean;
   markdown: string;
   entry: PageIndexEntry;
   baseUrl: string;
@@ -268,7 +273,7 @@ export async function buildPrintDocument(opts: PrintDocumentOptions): Promise<Pr
   };
 
   const rendered = markWideTables(stripExecutable(await markdownToHtml(opts.markdown)));
-  const body = await inlineLocalAssets(rendered, opts.entry.space, opts.baseUrl);
+  const body = await inlineLocalAssets(rendered, opts.entry.space, opts.baseUrl, opts.publicSite);
 
   const html = [
     '<!doctype html><html lang="en"><head><meta charset="utf-8">',

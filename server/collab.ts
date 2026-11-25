@@ -37,13 +37,14 @@ import { dirOf as wikiDirOf } from './wikilinks.js';
 import { movedCanvasPath, rewriteCanvasStrings } from '../shared/canvas/index.js';
 import { resolveRelative } from './indexV2/resolve.js';
 import * as shares from './shares.js';
+import { guardGuestSocket } from './guestSockets.js';
 import { shareGrantsPage } from './export/shareScope.js';
 import { isPublicPage } from './publicSites.js';
 import { query, queryOne } from './db/pool.js';
 import type { GitIdentity } from './git.js';
 import { badRequest, HttpError } from './errors.js';
 import { tableColumnSchema, tableViewSchema } from '../shared/contracts.js';
-import type { PageKind, PageMeta, TableCellValue, TableColumn, TableDoc, TableRow, TableView } from '../shared/contracts.js';
+import type { PageKind, PageMeta, TableCellValue, TableColumn, TableDoc, TableRow, TableView, User } from '../shared/contracts.js';
 import { duplicateRowReplacements, isOverHardRowLimit, isTableParseError, parseTableFile, pruneDanglingColumnRefs, serializeTableFile, uniqueTableRows } from '../shared/tables/index.js';
 import { decodeScenePayload, extractScenePayload, renderSceneSvg } from './confluenceWhiteboard.js';
 import { orderBoardElements, placeBoundTexts, withBoardIndexes } from './boardOrder.js';
@@ -2774,7 +2775,7 @@ export class RevisionConflictError extends HttpError {
  * between them — so nobody can type in between; everything that awaits
  * (entry lookup, icon/cover persist) is done before it or after it.
  */
-export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string): Promise<boolean> {
+export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string, rememberBody?: (before: string) => void): Promise<boolean> {
   const markdown = normalizeEol(rawMarkdown);
   const doc = docs.get(id);
   if (!doc) return false;
@@ -2806,6 +2807,7 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
   // `before` is kept in the room backup (backupRoomText) either way.
   const before = ytext.toString();
   if (baseRevision !== undefined && bodyRevision(before) !== baseRevision) throw new RevisionConflictError(bodyRevision(before));
+  rememberBody?.(before);
   const changed = before !== markdown;
   if (changed) {
     // setYText keeps unchanged text (even between two edits) under its old Yjs identity, so a
@@ -2833,11 +2835,14 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
  * restore) leave it out on purpose.
  *
  */
-export async function editDocBody(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string): Promise<PageMeta> {
+export async function editDocBody(id: string, rawMarkdown: string, overrideIcon?: string | null, overrideCover?: string | null, baseRevision?: string, rememberBody?: (before: string) => void): Promise<PageMeta> {
   const markdown = normalizeEol(rawMarkdown);
   const verifyBody = (current: string) => {
-    const revision = bodyRevision(current);
-    if (revision !== baseRevision) throw new RevisionConflictError(revision);
+    rememberBody?.(current);
+    if (baseRevision !== undefined) {
+      const revision = bodyRevision(current);
+      if (revision !== baseRevision) throw new RevisionConflictError(revision);
+    }
   };
   for (;;) {
     const result = await storage.withDocFileLock(id, async () => {
@@ -2845,7 +2850,7 @@ export async function editDocBody(id: string, rawMarkdown: string, overrideIcon?
       if (closing) return { closing };
       const doc = docs.get(id);
       if (doc) return { doc, seeding: seedingPromises.get(id) };
-      return storage.writeDocBodyLocked(id, markdown, overrideIcon, overrideCover, baseRevision === undefined ? undefined : verifyBody);
+      return storage.writeDocBodyLocked(id, markdown, overrideIcon, overrideCover, baseRevision === undefined && !rememberBody ? undefined : verifyBody);
     });
     if ('meta' in result) return result.meta;
     if ('closing' in result) {
@@ -2854,7 +2859,7 @@ export async function editDocBody(id: string, rawMarkdown: string, overrideIcon?
     }
     if (result.seeding) await result.seeding;
     if (docs.get(id) !== result.doc) continue;
-    if (await applyMarkdownUpdate(id, markdown, overrideIcon, overrideCover, baseRevision)) {
+    if (await applyMarkdownUpdate(id, markdown, overrideIcon, overrideCover, baseRevision, rememberBody)) {
       return storage.toPageMeta(await storage.requireEntry(id));
     }
   }
@@ -3269,6 +3274,31 @@ function makeReadOnly(conn: unknown): void {
   }) as MinimalEmitter['on'];
 }
 
+/** Bind a signed-in editor's paste against the exact before/after bodies of that
+ * synchronous Yjs frame. A guest frame, an awareness message and ordinary typing
+ * do not cause a full Markdown parse. Uploads already bind to their target page. */
+function trackEditorAssetPastes(conn: WS.WebSocket, pageId: string, user: User): void {
+  let before: string | undefined;
+  conn.prependListener('message', (message) => {
+    before = undefined;
+    if (!(message instanceof ArrayBuffer) || message.byteLength < 64 || frameTopType(message) !== MESSAGE_SYNC) return;
+    if (Buffer.from(message).includes('/a/')) before = getLiveText(pageId);
+  });
+  conn.on('message', () => {
+    const previous = before;
+    before = undefined;
+    if (previous === undefined) return;
+    const current = getLiveText(pageId);
+    if (current === undefined || previous === current) return;
+    void (async () => {
+      const entry = await storage.getEntry(pageId);
+      if (!entry || !session.roleAtLeast(await session.effectivePageRole(user, entry), 'editor')) return;
+      const { bindSubmittedAssets } = await import('./assetRoute.js');
+      await bindSubmittedAssets(user, pageId, current, [], previous);
+    })().catch((err) => console.error('[collab] could not bind pasted attachments', err));
+  });
+}
+
 function rejectUpgrade(socket: { write: (chunk: string) => void; destroy: () => void }, status: number, statusText: string): void {
   socket.write(`HTTP/1.1 ${status} ${statusText}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
   socket.destroy();
@@ -3315,7 +3345,8 @@ export function attachToServer(httpServer: HttpServer): void {
       // session is a browser-only concept with no equivalent "scope" story for
       // an open-ended real-time stream, so it stays cookie-only.
       const cookies = session.parseCookieHeader(req.headers.cookie);
-      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
+      const guestRoute = url.searchParams.has('publicSite') || (url.searchParams.has('share') && url.searchParams.get('as') === 'guest');
+      const sessionToken = guestRoute ? undefined : cookies[session.SESSION_COOKIE_NAME];
       const user = await session.userForToken(sessionToken);
 
       let role: Awaited<ReturnType<typeof session.effectiveRole>>;
@@ -3383,7 +3414,8 @@ export function attachToServer(httpServer: HttpServer): void {
         // `.agent/**`, not a template) opens, read-only, for anybody — that is
         // what lets a table render live on the public site. Never an editor, and
         // never a restricted page: isPublicPage answers false for those.
-        if (!granted && (await isPublicPage(entry))) {
+        const publicSite = url.searchParams.get('publicSite');
+        if (!granted && !shareToken && (publicSite === null || publicSite === entry.space) && (await isPublicPage(entry))) {
           role = 'viewer';
           guestIdentity = { name: 'Public visitor', email: 'guest@folio.local' };
           publicVisitor = true;
@@ -3423,6 +3455,9 @@ export function attachToServer(httpServer: HttpServer): void {
           if (publicVisitor) makeSilentViewer(conn);
           else if (role === 'viewer') makeReadOnly(conn);
           setupWSConnection(conn, req, { docName });
+          if (entry.kind === 'doc' && sessionAuthorized && user && session.roleAtLeast(role, 'editor')) {
+            trackEditorAssetPastes(conn, docName, user);
+          }
           // After setupWSConnection, so our listener runs alongside its own.
           (conn as MinimalEmitter).on('message', (...args: unknown[]) => {
             const raw = args[0] as ArrayBuffer | Uint8Array;
@@ -3430,7 +3465,20 @@ export function attachToServer(httpServer: HttpServer): void {
           });
         };
         if (sessionAuthorized && user && sessionToken) void session.openSessionSocket(user.id, sessionToken, conn, start);
-        else start();
+        else {
+          const shareToken = url.searchParams.get('share');
+          const allowed = async () => {
+            if (shareToken) {
+              const share = await shares.resolveShareToken(shareToken);
+              if (!share) return false;
+              if (share.pageId === docName) return share.mode === 'edit' || role === 'viewer';
+              return role === 'viewer' && share.includeChildren && shareGrantsPage(shareToken, docName);
+            }
+            const page = await storage.getEntry(docName);
+            return Boolean(page && page.space === entry.space && await isPublicPage(page));
+          };
+          guardGuestSocket(conn, allowed, start);
+        }
       });
     })();
   });

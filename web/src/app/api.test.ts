@@ -63,3 +63,20 @@ describe('request retry (transient 502/503/504 during a redeploy)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+it('reads explicit guest routes without requesting or caching an owner identity', async () => {
+  const fetch = vi.fn().mockResolvedValue(jsonResponse(200, { user: { id: 'reader' } }));
+  vi.stubGlobal('fetch', fetch);
+  try {
+    for (const pathname of ['/public/handbook', '/share/guest']) {
+      vi.stubGlobal('location', { pathname });
+      expect((await api.getAuthState()).user).toBeNull();
+    }
+    expect(fetch).not.toHaveBeenCalled();
+    vi.stubGlobal('location', { pathname: '/s/handbook' });
+    expect((await api.getAuthState()).user?.id).toBe('reader');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

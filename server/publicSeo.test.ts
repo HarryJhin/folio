@@ -98,7 +98,7 @@ describe('public sites — SEO (real PG)', () => {
     priv = (await storage.createSpace(`Priv ${stamp}`, admin.id)).slug;
     for (const space of [acme, plain, closed, priv]) await authStore.setMembership(space, admin.id, 'admin');
 
-    guide = await doc(acme, 'Guide', 'title: Guide Title\ndescription: "All about <zebrafish> & friends"\nimage: /a/abc/cover.png\n');
+    guide = await doc(acme, 'Guide', 'title: Guide Title\ndescription: "All about <zebrafish> & friends"\nimage: /a/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cover.png\n');
     hidden = await doc(acme, 'Hidden');
     draft = await doc(acme, 'Draft', 'unlisted: true\n');
     await pageAccess.setAccess(admin, hidden, 'restricted', []);
@@ -168,7 +168,7 @@ describe('public sites — SEO (real PG)', () => {
     expect(html).toContain('<title>Guide Title · Acme Docs</title>');
     expect(html).toContain('<meta name="description" content="All about &lt;zebrafish&gt; &amp; friends" />');
     expect(html).toContain('<meta property="og:site_name" content="Acme Docs" />');
-    expect(html).toContain(`<meta property="og:image" content="https://${SITE_HOST}/a/abc/cover.png" />`);
+    expect(html).toContain(`<meta property="og:image" content="https://${SITE_HOST}/api/public/spaces/${acme}/pages/${guide.id}/assets/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cover.png" />`);
     expect(html).toContain(`<link rel="canonical" href="https://${SITE_HOST}/p/${guide.id}" />`);
     expect(html).toContain(`<meta property="og:url" content="https://${SITE_HOST}/p/${guide.id}" />`);
     expect(html).toContain('<html lang="uk">');

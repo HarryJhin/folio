@@ -1,10 +1,10 @@
+import { attachmentUrl, type AttachmentContext } from '@shared/attachmentUrls';
 import { visit } from 'unist-util-visit';
 import type { Root, Element } from 'hast';
 import type { WikilinkContext } from './wikilinks';
 import { dirOf, isExternalUrl, isMarkdownPath, isPageLinkPath, resolveRelativePath, splitFragment } from './resolvePath';
 
-export interface RelativeLinksOptions {
-  space: string;
+export interface RelativeLinksOptions extends AttachmentContext {
   /** Path of the page being rendered, relative to the space root. */
   pagePath: string;
   /**
@@ -24,12 +24,6 @@ export interface RelativeLinksOptions {
    */
   wikilinks?: WikilinkContext;
   pageUrl?: (id: string, targetSpace?: string) => string;
-}
-
-/** /files/<space>/<resolved>, plus ?share=<token> when rendering for a guest (round 8). */
-function filesUrl(space: string, resolved: string, shareToken: string | undefined): string {
-  const base = `/files/${space}/${resolved}`;
-  return shareToken ? `${base}?share=${encodeURIComponent(shareToken)}` : base;
 }
 
 /**
@@ -56,21 +50,20 @@ function filesUrl(space: string, resolved: string, shareToken: string | undefine
  *   card (link-preview.tsx renders a previewed page's body through this same
  *   <Markdown> pipeline) — one fix here reaches both surfaces.
  */
-export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pageUrl }: RelativeLinksOptions) {
+export function rehypeRelativeLinks(options: RelativeLinksOptions) {
+  const { space, pagePath, shareToken, wikilinks, pageUrl } = options;
+  const filesUrl = (path: string) => attachmentUrl(`/files/${space}/${path}`, options);
   const attachment = wikilinks?.status === 'ready' ? wikilinks.resolveAttachment : undefined;
   return (tree: Root) => {
     visit(tree, 'element', (node: Element) => {
       if (node.tagName === 'img') {
         const src = node.properties.src;
+        if (typeof src === 'string') node.properties.src = attachmentUrl(src, options);
         if (
           typeof src === 'string' &&
           src &&
           !isExternalUrl(src) &&
           !src.startsWith('data:') &&
-          // App-absolute srcs (the /a/<sha>/... asset store is public and
-          // already correct) must not be re-resolved against the page path —
-          // that used to produce a broken /files/<space>//a/... URL, so
-          // reading mode showed a dead image where live mode was fine.
           !src.startsWith('/')
         ) {
           const { path } = splitFragment(src);
@@ -82,7 +75,7 @@ export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pa
             return;
           }
           const resolved = attachment?.(path) ?? resolveRelativePath(pagePath, path);
-          node.properties.src = filesUrl(space, resolved, shareToken);
+          node.properties.src = filesUrl(resolved);
         }
         return;
       }
@@ -91,6 +84,11 @@ export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pa
         const href = node.properties.href;
         if (typeof href !== 'string' || !href) return;
 
+        const scoped = attachmentUrl(href, options);
+        if (scoped !== href) {
+          node.properties.href = scoped;
+          return;
+        }
         const authored = splitFragment(href);
         // A signed-in reader's catalog can map a local name across spaces.
         // Wait for that answer before exposing a clickable local destination.
@@ -138,7 +136,7 @@ export function rehypeRelativeLinks({ space, pagePath, shareToken, wikilinks, pa
         }
         // A real file (pdf/zip/etc.), not another Folio page — opens outside
         // the SPA, same as an external link (round 25).
-        node.properties.href = filesUrl(space, attachment?.(path) ?? resolved, shareToken) + hash;
+        node.properties.href = filesUrl(attachment?.(path) ?? resolved) + hash;
         node.properties.target = '_blank';
         node.properties.rel = ['noopener', 'noreferrer'];
       }

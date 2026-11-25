@@ -141,6 +141,76 @@ describe('WS /collab share-token auth (round 8, real http server + real WS clien
     await teardownSchema();
   });
 
+  it('closes an open edit-share socket on revocation and drops later collaboration frames', async () => {
+    const owner = await authStore.createUser({ email: 'guest-revoke@example.com', name: 'Owner', passwordHash: 'x', isAdmin: false });
+    const space = await storage.createSpace('Guest revoke', owner.id);
+    const page = await storage.createPage({ space: space.slug, parentPath: '', title: 'Guest revoke', kind: 'doc' });
+    const share = await shares.createShareLink(page.id, owner.id, 'edit', 'https://example.com');
+    const guest = await connectShareClient(port, page.id, share.url.split('/').at(-1)!);
+    try {
+      await waitSynced(guest.provider);
+      const closed = waitClosed(guest.provider, 2500);
+      await shares.revokeShare(share.id);
+      guest.doc.getText('content').insert(0, 'After revocation');
+      expect((await closed).code).toBe(1008);
+      expect(collab.getLiveText(page.id) ?? await storage.readFreshDocBody(page.id)).not.toContain('After revocation');
+    } finally {
+      guest.provider.destroy();
+      guest.doc.destroy();
+      await deleteTestSpace(space.slug);
+    }
+  });
+
+  it('binds a new signed-in paste without approving a guest’s earlier attachment', async () => {
+    const { putAsset } = await import('./assets.js');
+    const { query } = await import('./db/pool.js');
+    const owner = await authStore.createUser({ email: 'asset-paste@example.com', name: 'Owner', passwordHash: 'x', isAdmin: false });
+    const space = await storage.createSpace('Asset paste', owner.id);
+    await authStore.setMembership(space.slug, owner.id, 'editor');
+    const target = await storage.createPage({ space: space.slug, parentPath: '', title: 'Working page', kind: 'doc' });
+    const donor = await storage.createPage({ space: space.slug, parentPath: '', title: 'Source page', kind: 'doc' });
+    const first = await putAsset(Buffer.from('First'), { filename: 'first.txt', mime: 'text/plain' }, owner.id, donor.id);
+    const second = await putAsset(Buffer.from('Second'), { filename: 'second.txt', mime: 'text/plain' }, owner.id, donor.id);
+    await storage.writeDocBody(target.id, `[Unapproved](${first.url})`);
+    const token = (await authStore.createSession(owner.id)).token;
+    const editor = connectAuthedShareClient(port, target.id, '', token);
+    try {
+      await waitSynced(editor.provider);
+      const content = editor.doc.getText('content');
+      content.insert(content.length, `\n[Signed paste](${second.url})`);
+      const grants = () => query<{ sha256: string }>('SELECT sha256 FROM asset_page_grants WHERE page_id = $1', [target.id]);
+      await pollUntil(async () => (await grants()).length > 0);
+      expect(await grants()).toEqual([{ sha256: second.sha256 }]);
+    } finally {
+      editor.provider.destroy();
+      editor.doc.destroy();
+      await deleteTestSpace(space.slug);
+    }
+  });
+
+  it('stops an open public reader before the next private edit', async () => {
+    const owner = await authStore.createUser({ email: 'unpublish-room@example.com', name: 'Owner', passwordHash: 'x', isAdmin: false });
+    const space = await storage.createSpace('Unpublish room', owner.id);
+    const page = await storage.createPage({ space: space.slug, parentPath: '', title: 'Public guide', kind: 'doc' });
+    await authStore.setSpaceVisibility(space.slug, 'public');
+    const doc = new Y.Doc();
+    const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/collab`, page.id, doc, {
+      params: { publicSite: space.slug }, WebSocketPolyfill: wsPolyfill(), disableBc: true,
+    });
+    try {
+      await waitSynced(provider);
+      const closed = waitClosed(provider, 2500);
+      await authStore.setSpaceVisibility(space.slug, 'private');
+      await collab.editDocBody(page.id, '# Private revision');
+      expect((await closed).code).toBe(1008);
+      expect(doc.getText('content').toString()).not.toContain('Private revision');
+    } finally {
+      provider.destroy();
+      doc.destroy();
+      await deleteTestSpace(space.slug);
+    }
+  });
+
   it.each(['events', 'collab'])('honors revocation between authorization and registration of a real %s socket', async (kind) => {
     const owner = await authStore.createUser({ email: `upgrade-race-${kind}@collab-test.local`, name: 'Owner', passwordHash: 'x', isAdmin: false });
     const space = await storage.createSpace(`Upgrade race ${kind} ${Date.now()}`, owner.id);

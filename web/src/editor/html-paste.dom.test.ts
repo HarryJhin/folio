@@ -249,7 +249,7 @@ describe('rich paste integration (image + upload)', () => {
     await vi.waitFor(() => expect(view.state.doc.toString()).toContain('/a/deadbeef/pasted-image.png'));
     expect(event.defaultPrevented).toBe(true);
     expect(view.state.doc.toString()).toContain('before\n**Workshop title**');
-    expect(upload).toHaveBeenCalledWith('eng', expect.objectContaining({ name: 'pasted-image-01.png' }));
+    expect(upload).toHaveBeenCalledWith('eng', expect.objectContaining({ name: 'pasted-image-01.png' }), 'P1');
 
     view.destroy();
     host.remove();

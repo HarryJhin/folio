@@ -46,6 +46,10 @@ export async function runMigrations(pool: Pool): Promise<{ applied: string[] }> 
       await client.query('BEGIN');
       try {
         await client.query(sql);
+        if (file === '067_asset_uploaders.sql') {
+          const { backfillAssetGrants } = await import('./backfillAssetGrants.js');
+          await backfillAssetGrants(client);
+        }
         await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
         await client.query('COMMIT');
         // eslint-disable-next-line no-console

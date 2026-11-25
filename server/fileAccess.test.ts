@@ -129,6 +129,18 @@ describe('F-01: GET /files/:space/* follows page access and the share boundary',
     return app.inject({ method: 'GET', url, headers: cookie ? { cookie } : {} });
   }
 
+  it('keeps a guest-editable page within its approved repository attachments, including after share revocation', async () => {
+    const page = await doc('', 'Guest file references', '[Diagram](guide/diagram.png)');
+    const edit = await shares.createShareLink(page.id, owner.id, 'edit', 'https://example.com');
+    const token = edit.url.split('/share/')[1];
+    expect((await get(`/files/${space}/guide/diagram.png?share=${token}`)).statusCode).toBe(200);
+    await storage.writeDocBody(page.id, '[Diagram](guide/diagram.png) [Private chart](secret/chart.png)');
+    expect((await get(`/files/${space}/secret/chart.png?share=${token}`)).statusCode).toBe(403);
+    await shares.revokeShare(edit.id);
+    const view = await shareToken(page.id);
+    expect((await get(`/files/${space}/secret/chart.png?share=${view}`)).statusCode).toBe(403);
+  });
+
   async function shareToken(rootId: string, includeChildren = false): Promise<string> {
     const link = await shares.createShareLink(rootId, owner.id, 'view', 'http://acme.example.com', includeChildren);
     return link.url.split('/share/')[1];

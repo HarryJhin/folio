@@ -11,9 +11,10 @@
  * route (list/create/change/revoke) is browser-session only: a PAT, whatever
  * its scope, never sees or mints a token (server/routes.ts).
  */
+import { refreshGuestSockets } from './guestSockets.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ShareLinkInfo, ShareLinkMode } from '../shared/contracts.js';
-import { query, queryOne } from './db/pool.js';
+import { query, queryOne, withTransaction } from './db/pool.js';
 import { publicUrlOrOrigin } from './publicUrl.js';
 
 interface ShareLinkRow {
@@ -67,14 +68,17 @@ export async function createShareLink(
   includeChildren = false,
 ): Promise<ShareLinkInfo> {
   const token = randomBytes(16).toString('hex');
-  await query('INSERT INTO share_links (id, token, page_id, mode, created_by, include_children) VALUES ($1, $2, $3, $4, $5, $6)', [
-    randomUUID(),
-    token,
-    pageId,
-    mode,
-    createdBy,
-    includeChildren,
-  ]);
+  const refs = mode === 'edit' ? await (await import('./fileAccess.js')).initialGuestFileReferences(pageId) : [];
+  await withTransaction(async (client) => {
+    if (mode === 'edit') {
+      const first = await client.query('INSERT INTO guest_edited_pages VALUES ($1) ON CONFLICT DO NOTHING RETURNING page_id', [pageId]);
+      if (first.rowCount) await client.query('INSERT INTO guest_readable_files SELECT $1, unnest($2::text[])', [pageId, refs]);
+    }
+    await client.query(
+      'INSERT INTO share_links (id, token, page_id, mode, created_by, include_children) VALUES ($1, $2, $3, $4, $5, $6)',
+      [randomUUID(), token, pageId, mode, createdBy, includeChildren],
+    );
+  });
   const row = await queryOne<ShareLinkRow>(`${SHARE_SELECT} WHERE sl.token = $1`, [token]);
   return rowToInfo(row!, originFallback);
 }
@@ -125,9 +129,11 @@ export async function getShareForRevoke(id: string): Promise<ShareForRevoke | un
  */
 export async function setShareIncludeChildren(id: string, includeChildren: boolean): Promise<void> {
   await query('UPDATE share_links SET include_children = $2 WHERE id = $1 AND revoked_at IS NULL', [id, includeChildren]);
+  refreshGuestSockets();
 }
 
 /** Soft revoke — the row stays (auditable), just no longer resolvable. */
 export async function revokeShare(id: string): Promise<void> {
   await query('UPDATE share_links SET revoked_at = now() WHERE id = $1', [id]);
+  refreshGuestSockets();
 }

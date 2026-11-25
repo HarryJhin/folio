@@ -234,24 +234,8 @@ async function main(): Promise<void> {
   // under /public/:slug/. Same visibility filter as the HTML site.
   registerPublicLlmsRoutes(app);
 
-  // Round 8 follow-up (prod bug: images inside a shared page were 401ing for a
-  // guest — this route used to live inside the session-gated scope below).
-  // GET /a/:sha/:filename is keyed purely by a 64-hex SHA-256 content hash
-  // (assets.getAsset itself rejects anything not matching that shape) with NO
-  // space/page association stored anywhere — the hash IS the access control,
-  // exactly the same "unguessable capability URL" trust model the share token
-  // uses. A shared page's rendered <img>/<a> tags point straight at this URL
-  // regardless of who's viewing it, so it has to work with no session.
-  // TRADEOFF, explicit: anyone who obtains the exact /a/<sha>/<filename> URL
-  // (page source, browser network tab, a forwarded link) can fetch that asset
-  // indefinitely — with no session and, unlike a share link, no revocation
-  // path short of deleting the asset row itself. Accepted for the same reason
-  // an inline image in an emailed PDF or a shared Google Doc is: the asset
-  // was already handed to the page's recipient by design; this only removes
-  // the redundant SEPARATE credential check for fetching what the page
-  // already links to.
-  // The response type/disposition/CSP come from the bytes (server/safeServe.ts),
-  // never from the MIME type the uploader claimed — see assetRoute.ts.
+  // The bare attachment route authenticates readers. Share and public-site
+  // variants check the page's current grant and its reference to the bytes.
   registerAssetRoute(app);
 
   // Round 8 follow-up: /files/<space>/<path> accepts a share token (?share=)
@@ -294,12 +278,6 @@ async function main(): Promise<void> {
   // are never part of.
   await app.register(async (protectedScope) => {
     protectedScope.addHook('onRequest', session.requireSession);
-
-    // /files/<space>/... (share-token-or-session) and /a/:sha/:filename (fully
-    // public) both moved OUT of this scope in round 8's follow-up — see the
-    // dedicated filesScope above and the public /a/ route above that, plus
-    // their doc comments for why each had to leave this blanket-requireSession
-    // scope specifically.
 
     registerProtectedAuthRoutes(protectedScope);
     // Stage 4 (groups + SSO): sign-in sessions (own / admin) and the instance audit log screen's API.

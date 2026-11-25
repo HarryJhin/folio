@@ -126,6 +126,7 @@ const DOCX_HIGHLIGHT_BY_TOKEN: Record<HighlightColor, DocxHighlightName> = {
 };
 
 interface DocxContext {
+  publicSite?: boolean;
   space: string;
   baseUrl: string;
   /** Images already read/rasterized, keyed by their resolved absolute path. */
@@ -324,6 +325,7 @@ async function loadImage(ctx: DocxContext, url: string): Promise<LoadedImage | n
   } catch {
     return null;
   }
+  if (ctx.publicSite && !(await (await import('../fileAccess.js')).publicExportMayReadFile(ctx.space, relPath))) return null;
   const spaceDir = storage.getSpaceDir(ctx.space);
   const abs = path.resolve(spaceDir, relPath);
   if (!insideSpace(spaceDir, abs)) return null;
@@ -546,6 +548,7 @@ async function blockFor(node: RootContent, ctx: DocxContext): Promise<(Paragraph
 // ---------------------------------------------------------------------------
 
 export interface RenderDocxOptions {
+  publicSite?: boolean;
   markdown: string;
   entry: PageIndexEntry;
   baseUrl: string;
@@ -553,7 +556,7 @@ export interface RenderDocxOptions {
 
 export async function renderDocx(opts: RenderDocxOptions): Promise<Buffer> {
   const tree = (await parser.run(parser.parse(opts.markdown), opts.markdown)) as Root;
-  const ctx: DocxContext = { space: opts.entry.space, baseUrl: opts.baseUrl, imageCache: new Map() };
+  const ctx: DocxContext = { publicSite: opts.publicSite, space: opts.entry.space, baseUrl: opts.baseUrl, imageCache: new Map() };
   await prepareImages(tree, ctx);
 
   const children: (Paragraph | Table)[] = [];

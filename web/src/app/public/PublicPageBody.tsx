@@ -1,3 +1,4 @@
+import { attachmentUrl } from '@shared/attachmentUrls';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { officeFormat, type PageDoc, type PublicSiteInfo } from '@shared/contracts';
@@ -57,7 +58,7 @@ export function PublicPageBody({ site, page }: PublicPageBodyProps) {
   if (page.kind === 'table') {
     return (
       <div className="h-full w-full">
-        <TablePageView pageId={page.id} role="viewer" />
+        <TablePageView space={page.space} pageId={page.id} role="viewer" collabParams={{ publicSite: site.space }} />
       </div>
     );
   }
@@ -132,7 +133,7 @@ export function PublicPageBody({ site, page }: PublicPageBodyProps) {
 
   return (
     <>
-      {page.cover && <img src={page.cover} alt="" className="h-40 w-full object-cover sm:h-52" />}
+      {page.cover && <img src={attachmentUrl(page.cover, { space: page.space, pageId: page.id, publicSite: site, origin: globalThis.location?.origin })} alt="" className="h-40 w-full object-cover sm:h-52" />}
       {/* pageId resolves the page's [[wikilinks]] and embeds through the anonymous /links route; with `publicSite` set Markdown still shows no backlinks and no page tree. */}
       <Markdown markdown={page.markdown ?? ''} space={page.space} pagePath={page.path} pageId={page.id} publicSite={markdownSite} />
     </>

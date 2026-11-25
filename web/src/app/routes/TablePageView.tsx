@@ -1,3 +1,4 @@
+import { TableAttachmentContext } from '../../tables/attachmentContext';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -113,14 +114,14 @@ export function TablePageView({ pageId, role, space, collabParams, onViewState }
   usePublishPagePresence(presencePeople);
   const commentDoc = useMemo(() => (doc ? { rows: doc.rows, columns: doc.columns } : null), [doc]);
   // Comments on cells: for a signed-in reader of a table page; a share link never comments.
-  const tableComments = useTableComments({ pageId, session: session ?? null, enabled: !collabParams?.share, space, doc: commentDoc });
+  const tableComments = useTableComments({ pageId, session: session ?? null, enabled: !collabParams?.share && !collabParams?.publicSite, space, doc: commentDoc });
 
   // `user` column candidates. Same endpoint the editor's @-picker uses; a
   // failure degrades to "no suggestions", never to a broken table.
   const { data: mentionableData } = useQuery({
     queryKey: ['mentionable', space],
     queryFn: () => api.listMentionable(space!),
-    enabled: Boolean(space),
+    enabled: Boolean(space) && !collabParams?.share && !collabParams?.publicSite,
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -172,7 +173,10 @@ export function TablePageView({ pageId, role, space, collabParams, onViewState }
   // read as a broken feature.
   const rowMissing = highlightRowId !== undefined && !doc.rows.some((row) => row.id === highlightRowId);
 
+  const attachmentContext = { space: space ?? '', pageId, shareToken: collabParams?.share,
+    publicSite: collabParams?.publicSite ? { space: collabParams.publicSite } : undefined, origin: globalThis.location?.origin };
   return (
+    <TableAttachmentContext.Provider value={attachmentContext}>
     <div className="flex h-full min-h-0 flex-col">
       {rowMissing && (
         <p className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
@@ -196,5 +200,6 @@ export function TablePageView({ pageId, role, space, collabParams, onViewState }
         {tableComments.panel}
       </div>
     </div>
+    </TableAttachmentContext.Provider>
   );
 }

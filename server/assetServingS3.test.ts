@@ -35,6 +35,9 @@ vi.mock('@aws-sdk/client-s3', () => ({
 }));
 
 import { registerAssetRoute } from './assetRoute.js';
+import fastifyCookie from '@fastify/cookie';
+import { SESSION_COOKIE_NAME } from './auth/session.js';
+import { createUser, createSession } from './auth/store.js';
 import { putAsset } from './assets.js';
 import { setUpTestSchema } from './db/testSchema.js';
 import { HttpError } from './errors.js';
@@ -44,13 +47,18 @@ const SANDBOX_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data
 describe('assets on the S3 backend (fake SDK)', () => {
   let teardownSchema: () => Promise<void>;
   let app: FastifyInstance;
+  let userId: string;
+  let cookie: string;
   const saved = { backend: process.env.ASSET_BACKEND, bucket: process.env.S3_BUCKET };
 
   beforeAll(async () => {
     teardownSchema = await setUpTestSchema();
     process.env.ASSET_BACKEND = 's3';
     process.env.S3_BUCKET = 'folio-test-bucket';
+    userId = (await createUser({ email: 'owner@example.com', name: 'Owner', passwordHash: 'x', isAdmin: false })).id;
+    cookie = `${SESSION_COOKIE_NAME}=${(await createSession(userId)).token}`;
     app = Fastify();
+    await app.register(fastifyCookie);
     app.setErrorHandler((err, _request, reply) => {
       if (err instanceof HttpError) return reply.status(err.status).send({ error: err.message });
       return reply.status(500).send({ error: String(err) });
@@ -70,11 +78,11 @@ describe('assets on the S3 backend (fake SDK)', () => {
 
   it('serves an SVG from the bucket through the app with the sandbox policy, and stores it as a download', async () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg><!-- s3-svg -->');
-    const stored = await putAsset(svg, { mime: 'image/png', filename: 'chart.png' }, null);
+    const stored = await putAsset(svg, { mime: 'image/png', filename: 'chart.png' }, userId);
 
     expect(fake.puts.at(-1)).toMatchObject({ Bucket: 'folio-test-bucket', Key: stored.sha256, ContentType: 'image/svg+xml', ContentDisposition: 'attachment' });
 
-    const res = await app.inject({ method: 'GET', url: stored.url });
+    const res = await app.inject({ method: 'GET', url: stored.url, headers: { cookie } });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('image/svg+xml');
     expect(res.headers['content-security-policy']).toBe(SANDBOX_CSP);
@@ -84,13 +92,13 @@ describe('assets on the S3 backend (fake SDK)', () => {
 
   it('serves a PNG from the bucket inline and stores it with its real type and no forced download', async () => {
     const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('s3-png')]);
-    const stored = await putAsset(png, { mime: 'application/octet-stream', filename: 'pixel.png' }, null);
+    const stored = await putAsset(png, { mime: 'application/octet-stream', filename: 'pixel.png' }, userId);
 
     const put = fake.puts.at(-1)!;
     expect(put).toMatchObject({ Key: stored.sha256, ContentType: 'image/png' });
     expect(put.ContentDisposition).toBeUndefined();
 
-    const res = await app.inject({ method: 'GET', url: stored.url });
+    const res = await app.inject({ method: 'GET', url: stored.url, headers: { cookie } });
     expect(res.headers['content-type']).toBe('image/png');
     expect(String(res.headers['content-disposition'])).toMatch(/^inline;/);
     expect(res.headers['content-security-policy']).toBeUndefined();

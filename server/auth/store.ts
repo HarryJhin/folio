@@ -5,6 +5,7 @@
  * real query. Sessions are stored as sha256(token) — the raw token only
  * ever lives in the httpOnly cookie, mirroring a sibling project.
  */
+import { refreshGuestSockets } from '../guestSockets.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type {
   AccessLogEntry,
@@ -706,6 +707,7 @@ export async function listInstanceVisibleSpaceSlugs(): Promise<string[]> {
 export async function setSpaceVisibility(space: string, visibility: SpaceVisibility): Promise<void> {
   const rows = await query<{ slug: string }>('UPDATE spaces SET visibility = $2 WHERE slug = $1 RETURNING slug', [space, visibility]);
   if (rows.length === 0) throw notFound('space');
+  refreshGuestSockets();
 }
 
 // ---------------------------------------------------------------------------
