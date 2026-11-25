@@ -67,6 +67,12 @@ describe('folioLinkKey / folioLinkNavPath', () => {
     expect(folioLinkKey({ space: 's', kind: 'space' })).toBe('space:s');
   });
 
+  it('round-trips a nested folder link with reserved characters and literal percent escapes', () => {
+    const ref = { kind: 'dir', space: 'docs', path: '도움말/Notes %20 #draft?/%2F' } as const;
+    const href = folioLinkNavPath(ref);
+    expect(parseFolioLink(new URL(href, ORIGIN).href, ORIGIN)).toEqual(ref);
+  });
+
   it('rebuilds the exact app route for each kind', () => {
     expect(folioLinkNavPath({ space: 's', kind: 'page', id: 'a' })).toBe('/s/s/p/a');
     expect(folioLinkNavPath({ space: 's', kind: 'dir', path: 'a/b' })).toBe('/s/s/d/a/b');

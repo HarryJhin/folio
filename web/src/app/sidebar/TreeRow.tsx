@@ -1,3 +1,4 @@
+import { folioLinkNavPath } from '../../markdown/folioLinks';
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
@@ -142,7 +143,7 @@ export function TreeRow({
   const description = descriptions?.get(node.id);
   const baseTitleHint = displayTitle === node.title ? node.title : `${node.title} · ${node.path}`;
   const rowTitleHint = description ? `${baseTitleHint}\n${description}` : baseTitleHint;
-  const href = isFolder ? `/s/${space}/d/${node.path}` : `/s/${space}/p/${node.id}`;
+  const href = isFolder ? folioLinkNavPath({ kind: 'dir', space, path: node.path }) : `/s/${space}/p/${node.id}`;
   // Round 5: the frontmatter emoji replaces the kind icon in the row's icon box (display-only: editing happens in the page header's picker).
   // The glyph itself lives in PageGlyph (owner 07.11.2026: empty slots read as holes; a consistent icon column wins).
   const glyph = <PageGlyph kind={node.kind} icon={node.icon} path={node.path} />;

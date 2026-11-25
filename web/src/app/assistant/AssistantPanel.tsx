@@ -1,3 +1,4 @@
+import { folioLinkNavPath } from '../../markdown/folioLinks';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, matchPath } from 'react-router';
@@ -155,6 +156,7 @@ export function AssistantPanel({ open, onClose, pendingAsk = null, onAskHandled 
   // GET /api/spaces) — the render below picks link-vs-plain-text on that.
   const { data: spacesData } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
   const agentRules = space ? spacesData?.spaces.find((s) => s.slug === space)?.agentRules : undefined;
+  const agentRulesHref = space && agentRules?.path ? folioLinkNavPath({ kind: 'dir', space, path: agentRules.path }) : undefined;
 
   const [conversationId, setConversationId] = useState<string | null>(readStoredConversationId);
   const [startNew, setStartNew] = useState(false);
@@ -588,11 +590,11 @@ export function AssistantPanel({ open, onClose, pendingAsk = null, onAskHandled 
               it means, since there's nowhere for a non-admin to navigate to —
               `.agent` pages stay invisible to them everywhere else. */}
           {agentRules?.used &&
-            (agentRules.path ? (
+            (agentRulesHref ? (
               <div className="shrink-0 border-t border-neutral-200 px-2.5 py-1.5 dark:border-neutral-800">
                 <button
                   type="button"
-                  onClick={() => navigate(`/s/${space}/d/${agentRules.path}`)}
+                  onClick={() => navigate(agentRulesHref)}
                   className="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 dark:text-neutral-500 dark:hover:text-neutral-300"
                 >
                   <Shield size={12} aria-hidden="true" />

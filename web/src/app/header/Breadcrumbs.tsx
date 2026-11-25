@@ -1,3 +1,4 @@
+import { folioLinkNavPath } from '../../markdown/folioLinks';
 import { useEffect, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router';
@@ -90,7 +91,7 @@ export function Breadcrumbs({ space, pagePath, title, icon, pageId, canRename }:
       navigate(`/s/${space}/p/${meta.id}`);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
-        navigate(`/s/${space}/d/${dirPath}`);
+        navigate(folioLinkNavPath({ kind: 'dir', space, path: dirPath }));
         return;
       }
       showToast(errorText(err, 'header.breadcrumbs.navigateFailed'));
