@@ -820,7 +820,7 @@ also reach references. The optional `FOLIO_REFERENCE_SPACES` list limits which s
 appear as references. Without it, all other accessible spaces are references. A user with
 no visible primary space lands in an accessible reference. Direct links still follow
 the ordinary permission checks, including for files in spaces outside the navigation lists. A bookmarked bare root outside both lists returns to the preferred home when primary spaces are available.
-When reference navigation is fixed, creating a space opens its bookmarkable home at `/s/<slug>/home`. The configured switcher order is maintained.
+When reference navigation is fixed, creating a space opens its bookmarkable first view. Graph is the default; space admins can choose Space home in Space settings. The explicit home URL is `/s/<slug>/home`. The configured switcher order is maintained.
 MCP `list_spaces` uses the same order and accepts `includeAll: true` to include references.
 
 Global member searches prioritize primary spaces and honor the reference list. Explicit

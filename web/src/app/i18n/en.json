@@ -1001,7 +1001,7 @@
     "spaceMenu": {
       "label": "Space menu",
       "sync": "Sync",
-      "siteSettings": "Site & PDF settings…",
+      "siteSettings": "Space settings…",
       "assistantKey": "Folio AI key",
       "imageStorage": "Image storage",
       "scanSettings": "Indexing & files…",
@@ -2147,8 +2147,13 @@
     }
   },
   "spaceSettings": {
-    "title": "Site & PDF settings",
-    "noAccess": "Only space admins can change the site and PDF settings.",
+    "firstView": {
+      "title": "First view",
+      "save": "Save first view",
+      "saved": "First view saved."
+    },
+    "title": "Space settings",
+    "noAccess": "Only space admins can change space settings.",
     "backToSpace": "Back to the space",
     "loadFailed": "Could not load the settings",
     "filesForbidden": "The files in the repository (SEO, CSS, PDF) can only be edited by space admins.",

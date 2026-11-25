@@ -34,7 +34,7 @@ async function buildApp(): Promise<FastifyInstance> {
   return app;
 }
 
-describe('scan settings route (real PG + git, fastify inject)', () => {
+describe('space settings routes (real PG + git, fastify inject)', () => {
   let teardownSchema: () => Promise<void>;
   let app: FastifyInstance;
   let adminCookie: string;
@@ -75,6 +75,31 @@ describe('scan settings route (real PG + git, fastify inject)', () => {
   async function paths(space: string): Promise<string[]> {
     return (await storage.listEntries(space)).map((e) => e.relPath).sort();
   }
+
+  it('opens spaces in graph view by default and reports an admin’s saved choice to members', async () => {
+    const space = await newSpace(`First view ${Date.now()}`);
+    const listedView = async () => {
+      const list = await app.inject({ method: 'GET', url: '/api/spaces', headers: { cookie: editorCookie } });
+      return list.json<{ spaces: SpaceInfo[] }>().spaces.find((item) => item.slug === space)?.firstView;
+    };
+    const save = (firstView: string, headers: Record<string, string>) =>
+      app.inject({ method: 'PUT', url: `/api/spaces/${space}/first-view`, headers, payload: { firstView } });
+
+    expect(await listedView()).toBe('graph');
+    expect((await save('home', {})).statusCode).toBe(401);
+    expect((await save('home', { cookie: editorCookie })).statusCode).toBe(403);
+    const token = await authStore.createApiToken(adminId, 'space settings test', ['read', 'write']);
+    expect((await save('home', { authorization: `Bearer ${token.token}` })).statusCode).toBe(403);
+    expect((await save('other', { cookie: adminCookie })).statusCode).toBe(400);
+    expect(await listedView()).toBe('graph');
+
+    const saved = await save('home', { cookie: adminCookie });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ firstView: 'home' });
+    expect(await listedView()).toBe('home');
+    expect((await save('graph', { cookie: adminCookie })).statusCode).toBe(200);
+    expect(await listedView()).toBe('graph');
+  });
 
   it('is for the space admin only, validates the list, rescans, and persists the flag', async () => {
     const space = await newSpace(`Scan route ${Date.now()}`);

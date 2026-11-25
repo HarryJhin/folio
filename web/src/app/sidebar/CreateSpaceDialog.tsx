@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
+import { spaceEntryPath } from '../lastSpace';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import type { GitCredentialInfo, SpaceImportProgress, SpaceList } from '@shared/contracts';
@@ -207,7 +208,7 @@ export function CreateSpaceDialog({ onClose, initialTab = 'empty' }: CreateSpace
       // rather than leaning on the fallback indefinitely.
       queryClient.invalidateQueries({ queryKey: ['auth', 'state'] });
       onClose();
-      navigate(`/s/${encodeURIComponent(space.slug)}${fixedNavigation ? '/home' : ''}`);
+      navigate(spaceEntryPath(space));
     },
   });
 

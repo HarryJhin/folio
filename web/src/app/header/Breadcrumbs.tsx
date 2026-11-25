@@ -200,7 +200,7 @@ export function Breadcrumbs({ space, pagePath, title, icon, pageId, canRename }:
       <span className="hidden min-w-0 shrink-[999] items-center gap-1 overflow-hidden md:flex md:min-w-[3.5rem]">
         <button
           type="button"
-          onClick={() => navigate(`/s/${space}`)}
+          onClick={() => navigate(`/s/${encodeURIComponent(space)}/home`)}
           // title/aria-label on the BUTTON, not just the label span: once the
           // trail collapses, the span it used to live on can be ellipsized
           // down to nothing, and this crumb is then a bare House glyph that
