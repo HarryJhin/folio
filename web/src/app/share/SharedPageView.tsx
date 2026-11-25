@@ -121,7 +121,6 @@ export function SharedPageView() {
           <img src="/favicon.svg" alt="" aria-hidden="true" className="h-4 w-4" />
           Folio
         </a>
-        <WhatIsFolio />
         {data && (
           <>
             <span className="shrink-0 text-neutral-300 dark:text-neutral-700" aria-hidden="true">
@@ -174,35 +173,6 @@ export function SharedPageView() {
         </div>
       </div>
     </div>
-  );
-}
-
-/**
- * A tiny badge next to the mark: on hover or keyboard focus a card says what Folio is and links to the product
- * site. CSS only (the panel's top padding, not a margin, keeps the hover while the pointer crosses the gap).
- * Hidden on phones, where the header is tight and the logo link already leads to the site.
- */
-function WhatIsFolio() {
-  const { t } = useTranslation('app');
-  return (
-    <span className="group relative hidden shrink-0 sm:inline-flex">
-      <a
-        href={FOLIO_PRODUCT_URL}
-        target="_blank"
-        rel="noopener"
-        className="rounded-full border border-neutral-200 px-1.5 text-[10px] leading-4 text-neutral-500 hover:text-neutral-800 dark:border-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
-      >
-        {t('share.public.whatIs')}
-      </a>
-      <span className="invisible absolute left-0 top-full z-50 pt-1 opacity-0 transition-opacity group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-        <span className="block w-max max-w-[20rem] rounded-md border border-neutral-200 bg-white px-2.5 py-1.5 text-xs text-neutral-700 shadow-md dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-          <span className="block">{t('share.public.whatIsTagline')}</span>
-          <a href={FOLIO_PRODUCT_URL} target="_blank" rel="noopener" className="mt-0.5 block text-blue-600 hover:underline dark:text-blue-400">
-            foliowiki.online
-          </a>
-        </span>
-      </span>
-    </span>
   );
 }
 

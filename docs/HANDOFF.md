@@ -6,6 +6,8 @@ update rather than appended to, so there is no history to dig through.
 
 Version: **0.4.5**.
 
+The share header displays the Folio mark, page title and access mode. The product introduction card has been removed.
+
 The document reader and offline PWA reader register `remark-cjk-friendly/parseOnly` alongside GFM. Both recognize emphasis boundaries next to CJK text. The live editor uses a separate CodeMirror grammar.
 
 Migration 067 records page grants for stored attachments and repository-file grants for guest-editable pages. It reconstructs legacy stored-asset grants from indexed references and preserves unlinked drafts for the recorded uploader. Earlier edit-share roots have no trustworthy record of approved references. Their owners can reattach the intended files. Public and share readers use page-scoped URLs. Attachment responses use `private, no-store`. Content cached under an older release follows its original expiry.
