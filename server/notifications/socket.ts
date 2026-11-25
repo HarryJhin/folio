@@ -13,7 +13,6 @@
 import type { Server as HttpServer } from 'node:http';
 import * as WS from 'ws';
 import * as session from '../auth/session.js';
-import { trackConnection } from '../liveConnections.js';
 import type { NotificationSocketEvent } from '../../shared/contracts.js';
 
 /**
@@ -39,8 +38,6 @@ const sessionTokenOf = new WeakMap<WS.WebSocket, string>();
 
 function register(userId: string, token: string, conn: WS.WebSocket): void {
   sessionTokenOf.set(conn, token);
-  // Closed when the session is revoked / the account deactivated (liveConnections.ts).
-  trackConnection(userId, token, conn);
   let set = connectionsByUser.get(userId);
   if (!set) {
     set = new Set();
@@ -138,13 +135,13 @@ export function attachToServer(httpServer: HttpServer): void {
       const cookies = session.parseCookieHeader(req.headers.cookie);
       const token = cookies[session.SESSION_COOKIE_NAME];
       const user = await session.userForToken(token);
-      if (!user || user.disabled || !token) {
+      if (!user || !token) {
         rejectUpgrade(socket, 401, 'Unauthorized');
         return;
       }
 
       wss.handleUpgrade(req, socket, head, (conn) => {
-        register(user.id, token, conn);
+        void session.openSessionSocket(user.id, token, conn, () => register(user.id, token, conn));
       });
     })().catch(() => {
       rejectUpgrade(socket, 500, 'Internal Server Error');

@@ -20,6 +20,8 @@ interface Entry {
   userId: string;
   tokenHash: string;
   socket: ClosableSocket;
+  expiresAt?: number;
+  timer?: NodeJS.Timeout;
 }
 
 const entries = new Set<Entry>();
@@ -31,30 +33,56 @@ export function hashSessionToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-/** Remembers a session-authenticated socket until it closes. */
-export function trackConnection(userId: string, sessionToken: string, socket: ClosableSocket): void {
+function closeEntry(entry: Entry): void {
+  clearTimeout(entry.timer);
+  if (!entries.delete(entry)) return;
+  try {
+    entry.socket.close(SESSION_ENDED_CLOSE_CODE, 'session ended');
+    // A peer that never answers the close handshake must not keep the connection alive.
+    setTimeout(() => entry.socket.terminate?.(), 2000).unref?.();
+  } catch {
+    entry.socket.terminate?.();
+  }
+}
+
+function setDeadline(entry: Entry, expiresAt: number): void {
+  clearTimeout(entry.timer);
+  entry.expiresAt = expiresAt;
+  entry.timer = setTimeout(() => closeEntry(entry), Math.max(0, expiresAt - Date.now()));
+  entry.timer.unref();
+}
+
+/** Returns a synchronous gate for frames that arrive before a delayed timer gets CPU time. */
+export function trackConnection(userId: string, sessionToken: string, socket: ClosableSocket, expiresAt?: string): () => boolean {
   const entry: Entry = { userId, tokenHash: hashSessionToken(sessionToken), socket };
   entries.add(entry);
+  if (expiresAt) setDeadline(entry, Date.parse(expiresAt));
   const forget = (): void => {
+    clearTimeout(entry.timer);
     entries.delete(entry);
   };
   socket.on('close', forget);
   socket.on('error', forget);
+  return () => {
+    if (entry.expiresAt !== undefined && Date.now() >= entry.expiresAt) closeEntry(entry);
+    return entries.has(entry);
+  };
+}
+
+export function extendSessionConnections(token: string, expiresAt: string): void {
+  const hash = hashSessionToken(token);
+  const deadline = Date.parse(expiresAt);
+  for (const entry of entries) {
+    if (entry.tokenHash === hash && (entry.expiresAt === undefined || deadline > entry.expiresAt)) setDeadline(entry, deadline);
+  }
 }
 
 function closeMatching(match: (entry: Entry) => boolean): number {
   let closed = 0;
-  for (const entry of [...entries]) {
+  for (const entry of entries) {
     if (!match(entry)) continue;
-    entries.delete(entry);
-    closed += 1;
-    try {
-      entry.socket.close(SESSION_ENDED_CLOSE_CODE, 'session ended');
-      // A peer that never answers the close handshake must not keep the connection alive.
-      setTimeout(() => entry.socket.terminate?.(), 2000).unref?.();
-    } catch {
-      entry.socket.terminate?.();
-    }
+    closeEntry(entry);
+    closed++;
   }
   return closed;
 }

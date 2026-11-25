@@ -4,15 +4,19 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18next from 'i18next';
 import type { SsoDiscoverResult, SsoProviderPublic } from '@shared/contracts';
+import { api } from '../api';
 import { LoginScreen, currentReturnTo, ssoStartUrl } from './LoginScreen';
 
 beforeEach(async () => {
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   await i18next.changeLanguage('en');
 });
 
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  localStorage.clear();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   window.history.replaceState({}, '', '/');
 });
@@ -49,6 +53,50 @@ describe('LoginScreen: single sign-on', () => {
     first.unmount();
     renderLogin('corp');
     expect(screen.getByRole('link', { name: 'Continue with Corp SSO' })).toBeTruthy();
+  });
+
+  it('does not start from a hidden or unfocused tab, then rechecks the session before its first foreground attempt', async () => {
+    const state = vi.spyOn(api, 'getAuthState').mockResolvedValue({ needsSetup: false, user: null, memberships: {}, google: false });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    const replace = vi.fn();
+    vi.stubGlobal('location', { ...window.location, pathname: '/', search: '', replace });
+    renderLogin('corp');
+    expect(replace).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(replace).not.toHaveBeenCalled();
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+    expect(state).toHaveBeenCalledOnce();
+  });
+
+  it('allows a single automatic start across tabs sharing the flow cookie', async () => {
+    const replace = vi.fn();
+    vi.stubGlobal('location', { ...window.location, pathname: '/', search: '', replace });
+    const first = renderLogin('corp');
+    await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+    first.unmount();
+    sessionStorage.clear(); // A second tab has its own sessionStorage but shares cookies and localStorage.
+    renderLogin('corp');
+    await screen.findByText('Log in to Folio');
+    expect(replace).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a previously hidden tab to an account already signed in elsewhere without starting another flow', async () => {
+    const state = vi.spyOn(api, 'getAuthState').mockResolvedValue({
+      needsSetup: false, user: { id: 'u', name: 'Member', email: 'member@example.com', isAdmin: false, createdAt: '' },
+      memberships: {}, google: false,
+    });
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    const replace = vi.fn();
+    vi.stubGlobal('location', { ...window.location, pathname: '/', search: '', replace });
+    renderLogin('corp');
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    fireEvent(window, new Event('focus'));
+    await waitFor(() => expect(state).toHaveBeenCalledOnce());
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it.each(['/login?local', '/?authError=denied'])('keeps recovery and sign-in errors visible at %s', (url) => {

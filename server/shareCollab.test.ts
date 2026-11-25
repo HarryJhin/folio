@@ -5,9 +5,11 @@
  * exchange. Mirrors the live two-real-WS-client verification used for the
  * round-6 doubling-fix work, now automated here.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as http from 'node:http';
-import WS from 'ws';
+import { once } from 'node:events';
+import * as notifications from './notifications/socket.js';
+import WS, { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { setUpTestSchema, deleteTestSpace } from './db/testSchema.js';
@@ -123,6 +125,7 @@ describe('WS /collab share-token auth (round 8, real http server + real WS clien
     collab.initCollab();
     server = http.createServer();
     collab.attachToServer(server);
+    notifications.attachToServer(server);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const addr = server.address();
     port = typeof addr === 'object' && addr ? addr.port : 0;
@@ -136,6 +139,67 @@ describe('WS /collab share-token auth (round 8, real http server + real WS clien
     server.closeAllConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await teardownSchema();
+  });
+
+  it.each(['events', 'collab'])('honors revocation between authorization and registration of a real %s socket', async (kind) => {
+    const owner = await authStore.createUser({ email: `upgrade-race-${kind}@collab-test.local`, name: 'Owner', passwordHash: 'x', isAdmin: false });
+    const space = await storage.createSpace(`Upgrade race ${kind} ${Date.now()}`, owner.id);
+    await authStore.setMembership(space.slug, owner.id, 'editor');
+    const page = await storage.createPage({ space: space.slug, parentPath: '', title: 'Race', kind: 'doc' });
+    const { token } = await authStore.createSession(owner.id, {}, new Date());
+    const original = WebSocketServer.prototype.handleUpgrade;
+    const upgrade = vi.spyOn(WebSocketServer.prototype, 'handleUpgrade').mockImplementationOnce(function (this: WebSocketServer, req, transport, head, done) {
+      // All pre-upgrade authorization has finished. End the session before the application sees the socket.
+      void authStore.destroySession(token).then(() => original.call(this, req, transport, head, done));
+    });
+    const path = kind === 'events' ? '/events' : `/collab/${page.id}`;
+    const socket = new WS(`ws://127.0.0.1:${port}${path}`, { headers: { cookie: `folio_session=${token}` } });
+    const frames = vi.fn();
+    socket.on('message', frames);
+    try {
+      const close = once(socket, 'close').then(([code]) => code);
+      await once(socket, 'open');
+      const result = await Promise.race([close, new Promise((resolve) => setTimeout(resolve, 500, 'still open'))]);
+      expect(result).toBe(4401);
+      expect(frames).not.toHaveBeenCalled();
+      expect(notifications.connectionCountForUser(owner.id)).toBe(0);
+    } finally {
+      socket.terminate();
+      upgrade.mockRestore();
+      await deleteTestSpace(space.slug);
+    }
+  });
+
+  it('closes long-open notification and editor sockets at the authentication limit while a share viewer stays connected', async () => {
+    const owner = await authStore.createUser({ email: 'socket-lifetime@collab-test.local', name: 'Owner', passwordHash: 'x', isAdmin: false });
+    const space = await storage.createSpace(`Socket lifetime ${Date.now()}`, owner.id);
+    await authStore.setMembership(space.slug, owner.id, 'editor');
+    const page = await storage.createPage({ space: space.slug, parentPath: '', title: 'Socket expiry', kind: 'doc' });
+    const link = await shares.createShareLink(page.id, owner.id, 'view', 'http://fallback.test');
+    const base = `ws://127.0.0.1:${port}`;
+    const guest = new WS(`${base}/collab/${page.id}?share=${link.url.split('/share/')[1]}`);
+    const sockets = [guest];
+    try {
+      await once(guest, 'open');
+      // The immutable authentication deadline falls two seconds from now.
+      const authTime = new Date(Date.now() - 30 * 86_400_000 + 2000);
+      const { token, expiresAt } = await authStore.createSession(owner.id, {}, authTime);
+      const headers = { cookie: `folio_session=${token}` };
+      const protectedSockets = ['/events', `/collab/${page.id}`].map((path) => new WS(base + path, { headers }));
+      sockets.push(...protectedSockets);
+      await Promise.all(protectedSockets.map((socket) => once(socket, 'open')));
+      const closed = protectedSockets.map((socket) => once(socket, 'close'));
+      expect(await authStore.recordBrowserActivity(token)).toBe(expiresAt);
+      for (const [code] of await Promise.all(closed)) expect(code).toBe(4401);
+      expect(Date.now()).toBeGreaterThanOrEqual(Date.parse(expiresAt));
+      expect(await authStore.resolveSessionUserId(token)).toBeUndefined();
+      expect(guest.readyState).toBe(WS.OPEN);
+      const again = new WS(base + '/events', { headers });
+      await expect(once(again, 'open')).rejects.toThrow('401');
+    } finally {
+      for (const socket of sockets) socket.terminate();
+      await deleteTestSpace(space.slug);
+    }
   });
 
   it('edit-mode share token gets real write access; view-mode is read-only; wrong page/revoked/absent tokens are all rejected', async () => {

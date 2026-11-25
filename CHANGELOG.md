@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Pocket ID browser sessions can now expire after 14 days of inactivity and require a fresh passkey after 30 days. Operators can enable this for one OIDC provider.
+
 - Custom branch pushes and pull requests run the source checks. Release publishing is restricted to the upstream repository.
 
 - Spaces open in the graph by default. Space admins can choose Space home as the first view in Space settings.

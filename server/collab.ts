@@ -48,7 +48,6 @@ import { duplicateRowReplacements, isOverHardRowLimit, isTableParseError, parseT
 import { decodeScenePayload, extractScenePayload, renderSceneSvg } from './confluenceWhiteboard.js';
 import { orderBoardElements, placeBoundTexts, withBoardIndexes } from './boardOrder.js';
 import type { ExcalidrawElement, ExcalidrawScene } from './confluenceWhiteboard.js';
-import { trackConnection } from './liveConnections.js';
 
 interface PersistenceHooks {
   bindState: (docName: string, doc: Y.Doc) => Promise<void> | void;
@@ -3316,7 +3315,8 @@ export function attachToServer(httpServer: HttpServer): void {
       // session is a browser-only concept with no equivalent "scope" story for
       // an open-ended real-time stream, so it stays cookie-only.
       const cookies = session.parseCookieHeader(req.headers.cookie);
-      const user = await session.userForToken(cookies[session.SESSION_COOKIE_NAME]);
+      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
+      const user = await session.userForToken(sessionToken);
 
       let role: Awaited<ReturnType<typeof session.effectiveRole>>;
       let guestIdentity: { name: string; email: string } | undefined;
@@ -3418,17 +3418,19 @@ export function attachToServer(httpServer: HttpServer): void {
         return;
       }
 
-      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
       wss.handleUpgrade(req, socket, head, (conn) => {
-        if (sessionAuthorized && user && sessionToken) trackConnection(user.id, sessionToken, conn);
-        if (publicVisitor) makeSilentViewer(conn);
-        else if (role === 'viewer') makeReadOnly(conn);
-        setupWSConnection(conn, req, { docName });
-        // After setupWSConnection, so our listener runs alongside its own.
-        (conn as MinimalEmitter).on('message', (...args: unknown[]) => {
-          const raw = args[0] as ArrayBuffer | Uint8Array;
-          if (isSyncStep1Frame(raw)) replyWithOwnStateVector(conn, docName);
-        });
+        const start = (): void => {
+          if (publicVisitor) makeSilentViewer(conn);
+          else if (role === 'viewer') makeReadOnly(conn);
+          setupWSConnection(conn, req, { docName });
+          // After setupWSConnection, so our listener runs alongside its own.
+          (conn as MinimalEmitter).on('message', (...args: unknown[]) => {
+            const raw = args[0] as ArrayBuffer | Uint8Array;
+            if (isSyncStep1Frame(raw)) replyWithOwnStateVector(conn, docName);
+          });
+        };
+        if (sessionAuthorized && user && sessionToken) void session.openSessionSocket(user.id, sessionToken, conn, start);
+        else start();
       });
     })();
   });

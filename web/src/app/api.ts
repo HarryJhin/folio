@@ -894,6 +894,8 @@ export const api = {
   /** Public. Drives the client auth gate: needsSetup | logged out | logged in. */
   getAuthState: () => request<AuthState>('/api/auth/state', { cache: 'no-store', headers: visitorHeaders() }),
 
+  recordSessionActivity: () => request<{ expiresAt: string }>('/api/me/session/activity', { method: 'POST', cache: 'no-store', redirect: 'manual' }),
+
   /** First-run only (409 once a user exists). The response body isn't relied on — callers re-fetch auth state after. */
   setupInstance: (body: SetupBody) =>
     request<unknown>('/api/auth/setup', { method: 'POST', body: JSON.stringify(body) }),

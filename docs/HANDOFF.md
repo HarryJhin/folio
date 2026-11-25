@@ -506,6 +506,11 @@ added to this list and to `docs/INSTALL.md`.
   The start routes take `returnTo`, keep it in the signed flow cookie and land
   there after sign-in; `safeAppPath` (`returnPath.ts`) accepts only a same-site
   path, never `/login` or `/api`, at most 1024 characters, else `/`.
+  For the selected `FOLIO_ACTIVITY_SESSION_PROVIDER`, the signed ID token
+  must attest a recent passkey. The browser activity route advances the 14-day
+  idle deadline up to 30 days from that authentication. Ordinary API and socket
+  traffic never advances it. `FOLIO_SESSION_PROXY_PREFIX` optionally renews
+  the front proxy cookie after a successful login.
 - **Group sync** (`groupSync.ts`) runs from the shared sign-in, so OIDC and SAML
   behave alike, in one transaction. It never touches `local` memberships or the
   manager flag, skips archived groups, refuses a change that would leave a space
