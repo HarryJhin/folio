@@ -10,6 +10,10 @@ The document reader and offline PWA reader register `remark-cjk-friendly/parseOn
 
 Migration 067 records page grants for stored attachments and repository-file grants for guest-editable pages. It reconstructs legacy stored-asset grants from indexed references and preserves unlinked drafts for the recorded uploader. Earlier edit-share roots have no trustworthy record of approved references. Their owners can reattach the intended files. Public and share readers use page-scoped URLs. Attachment responses use `private, no-store`. Content cached under an older release follows its original expiry.
 
+Open guest collaboration sockets recheck their share or publication for every batch of changes in either direction. Saving an unrelated change in an authenticated session leaves earlier guest-added attachment links unapproved. A deliberate signed paste of a stored attachment the editor can read, or an upload to the page, authorizes that attachment.
+
+A trash restore holds the destination’s file permissions until the saved grants are installed. Restoring a pre-067 trash item begins with an empty repository-file grant list because its prior editor approvals are unknown. An interrupted restore can be retried after indexing when the saved paths still have the same page IDs. If that identity check fails or the process stopped between the file move and indexing, recover the database and files together from the pre-restore backup before retrying. The pending row preserves the original destination and blocks purging its trash item.
+
 Migration 065 stores the first view per space. Signed-in space entry opens the graph by default. Space admins can select Space home in Space settings. The sidebar home and `/s/<space>/home` open the root index or directory listing. Public sites keep their document landing page.
 
 Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.

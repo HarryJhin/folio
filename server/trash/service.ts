@@ -339,11 +339,15 @@ async function guardRestoringAttachments(row: TrashRow, space: string, destRel?:
     const dir = destRel.slice(0, destRel.lastIndexOf('/') + 1);
     childPrefix = row.kind === 'folder' ? `${destRel}/` : `${dir}${storage.relPathStem(destRel, row.kind as PageKind)}/`;
   }
-  await query(
+  const claimed = await query(
     `INSERT INTO restoring_attachment_scopes (trash_id, space_slug, root_path, child_prefix) VALUES ($1,$2,$3,$4)
-     ON CONFLICT (trash_id) DO UPDATE SET space_slug = EXCLUDED.space_slug, root_path = EXCLUDED.root_path, child_prefix = EXCLUDED.child_prefix`,
+     ON CONFLICT (trash_id) DO UPDATE SET child_prefix = EXCLUDED.child_prefix
+       WHERE restoring_attachment_scopes.space_slug = EXCLUDED.space_slug
+         AND restoring_attachment_scopes.root_path IS NOT DISTINCT FROM EXCLUDED.root_path
+     RETURNING trash_id`,
     [row.id, space, destRel ?? null, childPrefix],
   );
+  if (!claimed.length) throw conflict('a previous restore of this item is still protecting another destination');
 }
 
 async function restoreAttachmentPermissions(row: TrashRow, space: string, mapPath: (path: string) => string | undefined): Promise<void> {
