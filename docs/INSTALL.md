@@ -289,6 +289,11 @@ When setting the proxy prefix, register both clients with the same Pocket ID
 issuer and keep their account restrictions in place. Give the proxy a 30-day
 cookie with refresh disabled only if each private resource also enforces the
 application session policy. The proxy cookie alone has no idle timeout.
+If a link must retain its `#fragment` when both cookies have expired, use
+OAuth2 Proxy’s standard sign-in page (`--skip-provider-button=false`).
+That page copies the browser fragment into the return address before the
+user continues to the identity provider. An immediate server redirect only
+receives the path and query.
 
 How accounts are matched: the provider's account id (`sub`) is linked to one
 Folio account. At the first sign-in, an existing Folio account with the same email
