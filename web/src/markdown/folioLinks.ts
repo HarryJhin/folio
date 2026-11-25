@@ -23,7 +23,7 @@ export type FolioLinkRef =
   | { space: string; kind: 'space' };
 
 const PAGE_RE = /^\/s\/([^/]+)\/p\/([^/]+)\/?$/;
-const DIR_RE = /^\/s\/([^/]+)\/d\/(.+?)\/?$/;
+const DIR_RE = /^\/s\/([^/]+)\/d(?:\/(.*?))?\/?$/i;
 const SPACE_RE = /^\/s\/([^/]+)\/?$/;
 
 function decodeSegment(segment: string): string {
@@ -34,7 +34,7 @@ function decodeSegment(segment: string): string {
   }
 }
 
-/** Decodes each `/`-separated segment individually, so a literal (encoded) slash inside one segment survives as text rather than becoming a path separator. */
+/** Decode each filename once, preserving literal percent escapes such as the text `%20` in a filename. */
 function decodeDirPath(path: string): string {
   return path.split('/').map(decodeSegment).join('/');
 }
@@ -44,7 +44,7 @@ function matchPathname(pathname: string): FolioLinkRef | null {
   if (page) return { space: decodeSegment(page[1]), kind: 'page', id: decodeSegment(page[2]) };
 
   const dir = pathname.match(DIR_RE);
-  if (dir) return { space: decodeSegment(dir[1]), kind: 'dir', path: decodeDirPath(dir[2]) };
+  if (dir) return { space: decodeSegment(dir[1]), kind: 'dir', path: decodeDirPath(dir[2] ?? '') };
 
   const spaceOnly = pathname.match(SPACE_RE);
   if (spaceOnly) return { space: decodeSegment(spaceOnly[1]), kind: 'space' };
@@ -89,6 +89,6 @@ export function folioLinkKey(ref: FolioLinkRef): string {
 /** The in-app SPA route `ref` navigates to — independent of whatever title/access resolution decides, since it's already fully determined by the parsed URL itself (see App.tsx's route table). */
 export function folioLinkNavPath(ref: FolioLinkRef): string {
   if (ref.kind === 'page') return `/s/${ref.space}/p/${ref.id}`;
-  if (ref.kind === 'dir') return `/s/${ref.space}/d/${ref.path}`;
+  if (ref.kind === 'dir') return `/s/${encodeURIComponent(ref.space)}/d/${ref.path.split('/').map(encodeURIComponent).join('/')}`;
   return `/s/${ref.space}`;
 }

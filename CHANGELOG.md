@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Fixed New page creating a second directory when the open folder name contained spaces or non-ASCII characters. Folder links now preserve literal percent escapes, number signs and question marks.
+
 - Removed the “What is Folio?” badge and its product introduction from shared pages.
 
 - Private attachments now require current Folio credentials. Published pages and share links check file access at read time, and guest editing preserves the original file grants. Shared PDF and Office pages now open in the same read-only viewers as published files.
