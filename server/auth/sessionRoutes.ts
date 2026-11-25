@@ -39,7 +39,6 @@ export function registerSessionRoutes(app: FastifyInstance): void {
     const expiresAt = await store.recordBrowserActivity(token);
     if (expiresAt === undefined) throw new HttpError(401, 'authentication required');
     if (expiresAt === null) return reply.code(204).send();
-    session.setSessionCookie(reply, token, expiresAt);
     return { expiresAt };
   });
 

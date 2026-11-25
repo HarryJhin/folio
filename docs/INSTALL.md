@@ -281,7 +281,10 @@ copy button). An `http://` issuer is accepted for `localhost` only, or with
 With the activity policy enabled, the provider must return a signed ID token
 with a recent `auth_time` and `phr` in `amr`. Folio requests `max_age=120` so it
 can use a passkey just verified at the proxy. An open background tab does not
-extend the deadline. Existing browser sessions keep their original expiry.
+extend the deadline. The sign-in cookie expires at the 30-day cap. Folio checks
+the earlier idle deadline on the server for each session. Activity responses never
+replace a cookie set by a later sign-in in another tab. Existing browser sessions
+keep their original expiry.
 To require reauthentication at rollout, revoke the affected users’ existing
 browser sessions after confirming a new sign-in and local recovery.
 

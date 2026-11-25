@@ -219,7 +219,7 @@ export function setSessionCookie(reply: FastifyReply, token: string, expiresAt?:
     httpOnly: true,
     sameSite: 'lax',
     secure: cookiesSecure(),
-    // An absolute deadline remains aligned with the database even if the response is delayed.
+    // An activity response must never overwrite a newer login from another tab. Set the credential only at sign-in.
     ...(expiresAt ? { expires: new Date(expiresAt) } : { maxAge: Math.floor(store.sessionTtlMs() / 1000) }),
     path: '/',
   });

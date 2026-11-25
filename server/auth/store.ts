@@ -34,8 +34,12 @@ const DAY_MS = 86_400_000;
 const BROWSER_IDLE_MS = 14 * DAY_MS;
 const BROWSER_AUTH_LIFETIME_MS = 30 * DAY_MS;
 
+function browserAbsoluteExpiry(authenticated: Date): number {
+  return authenticated.getTime() + BROWSER_AUTH_LIFETIME_MS;
+}
+
 function browserDeadline(activity: Date, authenticated: Date): Date {
-  return new Date(Math.min(activity.getTime() + BROWSER_IDLE_MS, authenticated.getTime() + BROWSER_AUTH_LIFETIME_MS));
+  return new Date(Math.min(activity.getTime() + BROWSER_IDLE_MS, browserAbsoluteExpiry(authenticated)));
 }
 
 /**
@@ -330,6 +334,8 @@ export async function updateUser(id: string, patch: UpdateUserInput, options: Up
 export interface CreatedSession {
   token: string;
   expiresAt: string;
+  /** A managed credential is written once. The database enforces the earlier idle deadline. */
+  credentialExpiresAt?: string;
 }
 
 /** Where a session was opened from — shown in the session list so a person can tell their devices apart. */
@@ -362,7 +368,11 @@ export async function createSession(userId: string, client: SessionClientInfo = 
     [hashToken(token), userId, expiresAt, cleanClientText(client.userAgent, MAX_USER_AGENT_LENGTH), cleanClientText(client.ip, MAX_IP_LENGTH), authenticatedAt ?? null, authenticatedAt ? now : null],
   );
   if (rows.length === 0) throw forbidden('a system account cannot sign in');
-  return { token, expiresAt: expiresAt.toISOString() };
+  return {
+    token,
+    expiresAt: expiresAt.toISOString(),
+    ...(authenticatedAt && { credentialExpiresAt: new Date(browserAbsoluteExpiry(authenticatedAt)).toISOString() }),
+  };
 }
 
 /** A session is "seen" at most this often (in-memory first, then the same rule in SQL so several instances agree). */

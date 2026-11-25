@@ -254,6 +254,8 @@ describe('single sign-on through OpenID Connect (mock provider, real PG)', () =>
       const handoff = new URL(String(res.headers.location));
       expect(handoff.pathname).toBe('/edge/start');
       expect(handoff.searchParams.get('rd')).toBe(target);
+      const credential = res.cookies.find(cookie => cookie.name === session.SESSION_COOKIE_NAME);
+      expect(credential?.expires?.getTime()).toBe((authenticatedAt + 30 * 86400) * 1000);
       const state = await app.inject({ method: 'GET', url: '/api/auth/state', headers: { cookie: sessionCookie! } });
       const owner = state.json().user;
       const stored = await queryOne<{ authenticated_at: string; active_at: string; expires_at: string }>(

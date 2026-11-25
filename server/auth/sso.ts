@@ -249,8 +249,8 @@ export async function finishSsoSignIn(
   // Every kind of sign-in (existing, linked, invite, JIT), OIDC and SAML alike — the account exists by now. Never fails the sign-in.
   await syncIdpGroups(outcome.userId, provider.id, provider.kind, mapped.groups, { provider, overage: mapped.groupsOverage });
   const client = { userAgent: request.headers['user-agent'], ip: request.ip };
-  const { token, expiresAt } = await store.createSession(outcome.userId, client, input.browserSession?.authenticatedAt);
-  session.setSessionCookie(reply, token, input.browserSession ? expiresAt : undefined);
+  const { token, credentialExpiresAt } = await store.createSession(outcome.userId, client, input.browserSession?.authenticatedAt);
+  session.setSessionCookie(reply, token, credentialExpiresAt);
   const origin = publicUrlOrOrigin(requestOrigin(request));
   const destination = safeAppPath(input.returnTo) ?? '/';
   const prefix = input.browserSession?.proxyPrefix;

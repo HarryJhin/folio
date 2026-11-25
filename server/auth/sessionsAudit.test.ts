@@ -181,8 +181,8 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
         const deadline = Date.parse(res.json().expiresAt);
         expect(deadline - Date.now()).toBeGreaterThan(14 * day - 3000);
         expect(deadline - Date.now()).toBeLessThanOrEqual(14 * day);
-        expect(res.cookies[0].value).toBe(token);
-        expect(res.cookies[0].expires?.getTime()).toBe(Math.floor(deadline / 1000) * 1000);
+        // Even a delayed response from a previous tab must never replace a fresh sign-in credential.
+        expect(res.cookies).toHaveLength(0);
       }
       const latest = Math.max(...responses.map((res) => Date.parse(res.json().expiresAt)));
       expect(Date.parse((await state(token)).activitySessionExpiresAt)).toBe(latest);
