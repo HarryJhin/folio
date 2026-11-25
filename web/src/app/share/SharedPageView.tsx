@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Eye, Pencil } from 'lucide-react';
-import type { SharedPagePayload, SpaceRole, SubtreeNode } from '@shared/contracts';
+import { officeFormat, type SharedPagePayload, type SpaceRole, type SubtreeNode } from '@shared/contracts';
 import { api, ApiError } from '../api';
 import { useDocumentTitle } from '../hooks';
 import { useOptionalSessionUser } from '../collabIdentity';
@@ -13,6 +13,8 @@ import { BoardEditor } from '../../diagrams';
 import { StaticBoardView } from '../routes/StaticBoardView';
 import { TablePageView } from '../routes/TablePageView';
 import { FormPageView } from '../routes/FormPageView';
+import { PdfView } from '../routes/PdfView';
+import { OfficeView } from '../routes/OfficeView';
 import { CanvasPane, spaceFileUrl } from '../../canvas';
 import { ArtifactView } from '../../artifact/ArtifactView';
 import { FOLIO_PRODUCT_URL } from '../public/publicSite';
@@ -371,13 +373,10 @@ function SharedPageBody({ payload, token, headerActions }: { payload: SharedPage
   }
 
   if (page.kind === 'pdf' || page.kind === 'office') {
-    // Sharing a pdf/office page's FILE isn't implemented yet (server/routes.ts's
-    // GET /api/pages/:id/file only accepts a session, not a share token) —
-    // this just keeps a share link to one from rendering a broken/blank
-    // editor instead of falling through to the doc branch below.
-    return (
-      <div className="p-8 text-sm text-neutral-500 dark:text-neutral-400">{page.title}</div>
-    );
+    const src = spaceFileUrl(page.space, page.path, token);
+    return page.kind === 'pdf'
+      ? <PdfView pageId={page.id} title={page.title} src={src} />
+      : <OfficeView pageId={page.id} title={page.title} format={officeFormat(page.path) ?? 'docx'} version={page.updatedAt} src={src} />;
   }
 
   if (page.kind === 'base') {

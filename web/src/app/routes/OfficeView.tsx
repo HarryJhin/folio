@@ -56,7 +56,7 @@ export function OfficeView({ pageId, title, format, version, src }: OfficeViewPr
     (async () => {
       try {
         const url = src ?? api.pageFileUrl(pageId, false, version);
-        const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+        const res = await fetch(url, { credentials: src ? 'omit' : 'include', cache: 'no-store' });
         if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
         const bytes = await res.arrayBuffer();
         const container = containerRef.current;

@@ -62,6 +62,8 @@ endpoints. A restart resets them, and a second process would count on its own.
 | Office | `*.docx`, `*.xlsx`, `*.pptx` | View only, rendered in the browser |
 | Artifact | `<name>.artifact/` (a folder) | Replaced as a whole, never edited in Folio. One page, however many files are inside |
 
+Published pages and explicit share links render PDF and Office files in the read-only file viewers. Shared roots and children pass the share token to the repository file route, which enforces the current grant on every read.
+
 A page with children takes one of two shapes: `X/index.md`, or `X.md` with a
 folder `X/` next to it. Every operation that moves, renames, deletes or
 restores a page has to handle both.
