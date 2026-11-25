@@ -9,6 +9,7 @@ import { useApiErrorText } from '../errorText';
 import { useDocumentTitle } from '../hooks';
 import { Tabs } from '../ui/Tabs';
 import { AppearanceTab } from './AppearanceTab';
+import { FirstViewSettings } from './FirstViewSettings';
 import { PdfTab } from './PdfTab';
 import { SiteTab } from './SiteTab';
 import { TAB_KEYS, parseTab, type SettingsTab } from './appearanceLogic';
@@ -16,8 +17,8 @@ import { useAppearance } from './useAppearance';
 import '../i18n/register';
 
 /**
- * `/s/:space/settings` — "Site & PDF" (space admins). One page for everything about how the space
- * presents itself outside the app: the publication summary (kept in Folio) and the SEO form, the
+ * `/s/:space/settings` (space admins). The first view is saved in Folio. The tabs manage
+ * the publication summary (kept in Folio), the SEO form, the
  * public site's stylesheet with a live preview, and the PDF header, footer and print CSS. All
  * files live in `.folio/` in the repository and are saved one tab at a time, one commit per save.
  * The tab is `?tab=site|appearance|pdf`; unsaved edits survive moving between the tabs.
@@ -32,7 +33,8 @@ export function SpaceSettingsPage() {
   useDocumentTitle(t('spaceSettings.title'));
 
   const spaces = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
-  const spaceName = spaces.data?.spaces.find((s) => s.slug === space)?.name ?? space;
+  const spaceInfo = spaces.data?.spaces.find((s) => s.slug === space);
+  const spaceName = spaceInfo?.name ?? space;
   const allowed = canManageMembers(role);
 
   const controller = useAppearance(space);
@@ -75,6 +77,8 @@ export function SpaceSettingsPage() {
         <h1 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('spaceSettings.title')}</h1>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">{spaceName}</p>
       </div>
+
+      {spaceInfo && <FirstViewSettings key={spaceInfo.slug} space={spaceInfo} />}
 
       <Tabs
         className="mb-5"
