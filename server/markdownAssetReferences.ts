@@ -1,3 +1,4 @@
+import type { TableDoc } from '../shared/contracts.js';
 import { parsePageMetaAsync } from './indexV2/parse.js';
 
 /** The digest in a Folio blob URL. Foreign URLs and partial hashes grant nothing. */
@@ -20,4 +21,12 @@ export async function markdownAssetHashes(markdown: string, properties: unknown[
     for (const link of (await parsePageMetaAsync(markdown)).links) urls.push(link.linkPath);
   }
   return new Set(urls.map(attachmentHash).filter((hash): hash is string => Boolean(hash)));
+}
+
+/** Link columns can store a bare URL or a Markdown link. Other column values are data. */
+export function tableAssetHashes(table: TableDoc): Promise<Set<string>> {
+  const columns = table.columns.filter((c) => c.type === 'link');
+  const urls = table.rows.flatMap((r) => columns.map((c) => r.values[c.id]));
+  const cells = urls.filter((v): v is string => typeof v === 'string').join('\n');
+  return markdownAssetHashes([table.head, cells, table.tail].join('\n\n'), urls);
 }

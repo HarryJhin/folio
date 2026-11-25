@@ -6,7 +6,7 @@ import { readFrontmatterBlock } from './frontmatter.js';
 import { parseCanvasMeta } from './indexV2/parse.js';
 import type { PageIndexEntry } from './storage.js';
 
-import { markdownAssetHashes } from './markdownAssetReferences.js';
+import { markdownAssetHashes, tableAssetHashes } from './markdownAssetReferences.js';
 
 export async function pageAssetHashes(page: PageIndexEntry): Promise<Set<string>> {
   if (!['doc', 'table', 'canvas', 'form', 'base'].includes(page.kind)) return new Set();
@@ -18,10 +18,7 @@ export async function pageAssetHashes(page: PageIndexEntry): Promise<Set<string>
   if (page.kind === 'table') {
     const table = getLiveTable(page.id) ?? parseTableFile(raw);
     if (isTableParseError(table)) return new Set();
-    const columns = table.columns.filter((c) => c.type === 'link');
-    const urls = table.rows.flatMap((r) => columns.map((c) => r.values[c.id]));
-    const cells = urls.filter((v): v is string => typeof v === 'string').join('\n');
-    return markdownAssetHashes([table.head, cells, table.tail].join('\n\n'), urls);
+    return tableAssetHashes(table);
   }
   const fm = readFrontmatterBlock(raw);
   const body = (page.kind === 'doc' ? getLiveText(page.id) : undefined) ?? raw.slice(fm.text.length);
