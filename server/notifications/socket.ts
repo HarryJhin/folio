@@ -7,13 +7,12 @@
  * `/events` here), so the order of registration does not matter and the
  * editor's socket stays untouched. Authorization is the same as in collab: a
  * raw upgrade never passes through Fastify/@fastify/cookie, so the cookie is
- * parsed by hand (session.parseCookieHeader + session.authForSessionToken). A PAT
+ * parsed by hand (session.parseCookieHeader + session.userForToken). A PAT
  * deliberately does not come here — as with /collab, this is a browser thing.
  */
 import type { Server as HttpServer } from 'node:http';
 import * as WS from 'ws';
 import * as session from '../auth/session.js';
-import { trackSessionSocket } from '../liveConnections.js';
 import type { NotificationSocketEvent } from '../../shared/contracts.js';
 
 /**
@@ -37,10 +36,8 @@ const connectionsByUser = new Map<string, Set<WS.WebSocket>>();
  */
 const sessionTokenOf = new WeakMap<WS.WebSocket, string>();
 
-function register(userId: string, token: string, conn: WS.WebSocket, expiresAt?: string): void {
+function register(userId: string, token: string, conn: WS.WebSocket): void {
   sessionTokenOf.set(conn, token);
-  // Closed when the session is revoked / the account deactivated (liveConnections.ts).
-  if (!trackSessionSocket(userId, token, conn, expiresAt)) return;
   let set = connectionsByUser.get(userId);
   if (!set) {
     set = new Set();
@@ -137,14 +134,14 @@ export function attachToServer(httpServer: HttpServer): void {
 
       const cookies = session.parseCookieHeader(req.headers.cookie);
       const token = cookies[session.SESSION_COOKIE_NAME];
-      const auth = await session.authForSessionToken(token);
-      if (!auth || !token) {
+      const user = await session.userForToken(token);
+      if (!user || !token) {
         rejectUpgrade(socket, 401, 'Unauthorized');
         return;
       }
 
       wss.handleUpgrade(req, socket, head, (conn) => {
-        register(auth.user.id, token, conn, auth.activitySessionExpiresAt);
+        void session.openSessionSocket(user.id, token, conn, () => register(user.id, token, conn));
       });
     })().catch(() => {
       rejectUpgrade(socket, 500, 'Internal Server Error');

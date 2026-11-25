@@ -477,7 +477,8 @@ export async function recordBrowserActivity(token: string): Promise<string | nul
     );
     if (!row || row.expires_at <= row.now) return undefined;
     if (!row.browser_authenticated_at || !row.browser_active_at) return null;
-    if (row.now.getTime() - row.browser_active_at.getTime() < SESSION_TOUCH_INTERVAL_MS) return row.expires_at.toISOString();
+    // Keep the deadline monotone if the database clock moves back or two signals share one millisecond.
+    if (row.now <= row.browser_active_at) return row.expires_at.toISOString();
     const deadline = browserDeadline(row.now, row.browser_authenticated_at);
     await client.query('UPDATE sessions SET browser_active_at = $2, expires_at = $3 WHERE token_hash = $1', [hash, row.now, deadline]);
     return deadline.toISOString();

@@ -18,6 +18,7 @@ import * as roles from '../access/roles.js';
 import { roleAtLeast } from '../access/roles.js';
 import { isAgentPath } from '../agentPath.js';
 import { normalizePublicUrl } from '../publicUrl.js';
+import { extendSessionConnections, SESSION_ENDED_CLOSE_CODE, trackConnection, type ClosableSocket } from '../liveConnections.js';
 import { setSentryUser } from '../sentry.js';
 import { isPublicPage, publicReadablePageIds } from '../publicSites.js';
 
@@ -274,6 +275,39 @@ export async function authForSessionToken(token: string | undefined | null): Pro
 
 export async function userForToken(token: string | undefined | null): Promise<User | null> {
   return (await authForSessionToken(token))?.user ?? null;
+}
+
+interface SessionSocket extends ClosableSocket {
+  pause(): void;
+  resume(): void;
+  emit(event: string | symbol, ...args: unknown[]): boolean;
+  send(...args: unknown[]): void;
+}
+
+/** Register first: a concurrent revocation then either removes the row before this read or closes the tracked socket. */
+export async function openSessionSocket(userId: string, token: string, socket: SessionSocket, start: () => void): Promise<void> {
+  socket.pause(); // Keep the client's first sync frame buffered until the application listeners are installed.
+  const active = trackConnection(userId, token, socket);
+  let admitted = false;
+  const emit = socket.emit.bind(socket);
+  socket.emit = (event, ...args) => (event !== 'message' || (admitted && active())) && emit(event, ...args);
+  const send = socket.send.bind(socket);
+  socket.send = (...args) => { if (admitted && active()) send(...args); };
+  try {
+    const verified = await store.resolveSession(token);
+    if (!verified || verified.userId !== userId) {
+      socket.close(SESSION_ENDED_CLOSE_CODE, 'session ended');
+      return;
+    }
+    if (verified.activitySessionExpiresAt) extendSessionConnections(token, verified.activitySessionExpiresAt);
+    if (!active()) return;
+    admitted = true;
+    start();
+  } catch {
+    socket.close(1011, 'session socket could not start');
+  } finally {
+    socket.resume();
+  }
 }
 
 export function extractBearerToken(request: FastifyRequest): string | undefined {

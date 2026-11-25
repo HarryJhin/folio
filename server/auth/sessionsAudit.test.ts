@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { setUpTestSchema } from '../db/testSchema.js';
 import { getPool, query } from '../db/pool.js';
 import { HttpError } from '../errors.js';
-import { extendSessionConnections, liveConnectionCount, trackConnection, trackSessionSocket } from '../liveConnections.js';
+import { extendSessionConnections, liveConnectionCount, trackConnection } from '../liveConnections.js';
 import * as oauthStore from '../oauth/store.js';
 import { registerAuditRoutes } from '../auditRoutes.js';
 import { AUDIT_CSV_HEADER, auditCsvChunks, csvCell, listAuditEvents } from '../auditLog.js';
@@ -164,7 +164,7 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
       await expect(store.createSession(user.id, {}, new Date(now - 30 * day))).rejects.toThrow();
     });
 
-    it('renews only explicit same-origin activity, keeping two tabs on one deadline and cookie', async () => {
+    it('renews only explicit same-origin activity, keeping the latest deadline across two tabs', async () => {
       const user = await newUser('activity-renewal');
       const { token } = await store.createSession(user.id, {}, new Date(Date.now() - 10 * day));
       const [prior] = await query<{ expires_at: Date }>(
@@ -178,14 +178,32 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
       const responses = await Promise.all([signal(token), signal(token)]);
       for (const res of responses) {
         expect(res.statusCode).toBe(200);
-        expect(res.json().expiresAt).toBe(responses[0].json().expiresAt);
         const deadline = Date.parse(res.json().expiresAt);
         expect(deadline - Date.now()).toBeGreaterThan(14 * day - 3000);
         expect(deadline - Date.now()).toBeLessThanOrEqual(14 * day);
         expect(res.cookies[0].value).toBe(token);
         expect(res.cookies[0].expires?.getTime()).toBe(Math.floor(deadline / 1000) * 1000);
       }
-      expect((await state(token)).activitySessionExpiresAt).toBe(responses[0].json().expiresAt);
+      const latest = Math.max(...responses.map((res) => Date.parse(res.json().expiresAt)));
+      expect(Date.parse((await state(token)).activitySessionExpiresAt)).toBe(latest);
+    });
+
+    it('accepts the final activity inside five minutes and sets the full idle lifetime from that activity', async () => {
+      const user = await newUser('activity-final-minute');
+      const { token } = await store.createSession(user.id, {}, new Date(Date.now() - day));
+      const [before] = await query<{ expires_at: Date }>(
+        `UPDATE sessions SET browser_active_at = statement_timestamp() - interval '4 minutes',
+           expires_at = statement_timestamp() + interval '336 hours' - interval '4 minutes'
+         WHERE user_id = $1 RETURNING expires_at`, [user.id],
+      );
+      const result = await signal(token);
+      const [row] = await query<{ browser_active_at: Date; expires_at: Date }>(
+        'SELECT browser_active_at, expires_at FROM sessions WHERE user_id = $1', [user.id],
+      );
+      expect(result.statusCode).toBe(200);
+      expect(row.expires_at.getTime() - before.expires_at.getTime()).toBeGreaterThanOrEqual(4 * 60_000);
+      expect(Date.parse(result.json().expiresAt)).toBe(row.browser_active_at.getTime() + 14 * day);
+      expect(result.json().expiresAt).toBe(row.expires_at.toISOString());
     });
 
     it('preserves ordinary cookie lifetimes and denies PAT-only renewal', async () => {
@@ -249,13 +267,42 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
       }
     });
 
-    it('rejects inbound and outbound frames on an expired socket even before its timer gets CPU time', () => {
+    it('admits no frames while the final session read is pending and ignores a stale result after revocation', async () => {
+      const user = await newUser('activity-revoke-pending');
+      const { token } = await store.createSession(user.id, {}, new Date());
+      const before = await store.resolveSession(token);
+      let finishRead!: (value: typeof before) => void;
+      const read = vi.spyOn(store, 'resolveSession').mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+      const sent = vi.fn();
+      const socket = Object.assign(new FakeSocket(), {
+        pause: vi.fn(), resume: vi.fn(), send: sent, emit: vi.fn((_event: string, ..._args: unknown[]) => true),
+      });
+      const start = vi.fn();
+      try {
+        const opening = session.openSessionSocket(user.id, token, socket, start);
+        expect(socket.pause).toHaveBeenCalledOnce();
+        socket.send('private');
+        expect(sent).not.toHaveBeenCalled();
+        expect(socket.emit('message', 'unverified')).toBe(false);
+        await store.destroySession(token);
+        finishRead(before);
+        await opening;
+        expect(socket.closed?.code).toBe(4401);
+        expect(start).not.toHaveBeenCalled();
+        expect(liveConnectionCount(user.id)).toBe(0);
+      } finally {
+        read.mockRestore();
+      }
+    });
+
+    it('rejects inbound and outbound frames on an expired socket even before its timer gets CPU time', async () => {
       const delivered = vi.fn();
-      const socket = Object.assign(new FakeSocket(), { send: delivered, emit: vi.fn((_event: string, ..._args: unknown[]) => true) });
+      const socket = Object.assign(new FakeSocket(), { pause: vi.fn(), resume: vi.fn(), send: delivered, emit: vi.fn((_event: string, ..._args: unknown[]) => true) });
       vi.useFakeTimers();
       try {
         const deadline = Date.now() + 1000;
-        trackSessionSocket('user', 'test-token', socket, new Date(deadline).toISOString());
+        vi.spyOn(store, 'resolveSession').mockResolvedValueOnce({ userId: 'user', activitySessionExpiresAt: new Date(deadline).toISOString() });
+        await session.openSessionSocket('user', 'test-token', socket, () => {});
         socket.send('permitted');
         vi.setSystemTime(deadline);
         expect(socket.emit('message', 'late')).toBe(false);
@@ -263,6 +310,7 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
         expect(delivered).toHaveBeenCalledTimes(1);
         expect(socket.closed?.code).toBe(4401);
       } finally {
+        vi.restoreAllMocks();
         vi.useRealTimers();
       }
     });

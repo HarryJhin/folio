@@ -69,28 +69,11 @@ export function trackConnection(userId: string, sessionToken: string, socket: Cl
   };
 }
 
-interface SessionSocket extends ClosableSocket {
-  emit(event: string | symbol, ...args: unknown[]): boolean;
-  send(...args: unknown[]): void;
-}
-
-/** Guard both the editor's message handler and outgoing documents / notifications at the same deadline. */
-export function trackSessionSocket(userId: string, token: string, socket: SessionSocket, expiresAt?: string): boolean {
-  const active = trackConnection(userId, token, socket, expiresAt);
-  if (!expiresAt) return true;
-  if (!active()) return false;
-  const emit = socket.emit.bind(socket);
-  socket.emit = (event, ...args) => (event !== 'message' || active()) && emit(event, ...args);
-  const send = socket.send.bind(socket);
-  socket.send = (...args) => { if (active()) send(...args); };
-  return true;
-}
-
 export function extendSessionConnections(token: string, expiresAt: string): void {
   const hash = hashSessionToken(token);
   const deadline = Date.parse(expiresAt);
   for (const entry of entries) {
-    if (entry.tokenHash === hash && entry.expiresAt !== undefined && deadline > entry.expiresAt) setDeadline(entry, deadline);
+    if (entry.tokenHash === hash && (entry.expiresAt === undefined || deadline > entry.expiresAt)) setDeadline(entry, deadline);
   }
 }
 
