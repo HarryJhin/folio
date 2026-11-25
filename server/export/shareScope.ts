@@ -51,7 +51,10 @@ export interface ShareScope {
  * that never existed) and for a token whose page has since been deleted.
  */
 export async function resolveShareScope(token: string): Promise<ShareScope | undefined> {
-  const share = await shares.resolveShareToken(token);
+  return collectShareScope(await shares.resolveShareToken(token));
+}
+
+async function collectShareScope(share: ResolvedShare | undefined): Promise<ShareScope | undefined> {
   if (!share) return undefined;
   const root = await storage.getEntry(share.pageId);
   if (!root) return undefined;
@@ -63,4 +66,14 @@ export async function resolveShareScope(token: string): Promise<ShareScope | und
 export async function shareGrantsPage(token: string, pageId: string): Promise<boolean> {
   const scope = await resolveShareScope(token);
   return scope ? scope.collected.ids.has(pageId) : false;
+}
+
+/** Recheck a known artifact page against the live share that issued its bundle ticket. */
+export async function shareIdGrantsPage(id: string, pageId: string): Promise<boolean> {
+  const share = await shares.resolveShareId(id);
+  if (!share) return false;
+  if (share.pageId === pageId) return true;
+  if (!share.includeChildren) return false;
+  const scope = await collectShareScope(share);
+  return scope?.collected.ids.has(pageId) ?? false;
 }

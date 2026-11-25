@@ -24,9 +24,9 @@ export interface FormPageViewProps {
   /** The fields' options / members for THIS reader (`PageDoc.formChoices`); undefined renders every choice field as a plain input. */
   choices?: Record<string, FormFieldChoices>;
   canEdit: boolean;
-  /** Present only for an anonymous share-link guest — forwarded to POST /api/forms/:id/submit. */
+  /** The share link grants guest access even when the browser also has a member session. */
   shareToken?: string;
-  /** The public site's anonymous reader: the form is shown, but there is nothing to send it with (no session, no share token). */
+  /** Published pages and forms viewed through a parent share are read-only. */
   submitDisabled?: boolean;
 }
 
@@ -74,7 +74,8 @@ export function FormPageView({ pageId, space, markdown, choices, canEdit, shareT
   // Whose answers these are: a share-link guest (the token), a signed-in user,
   // or nobody in particular. A public site's anonymous reader can't send the
   // form at all, so there is nothing worth keeping for them.
-  const answersKey = submitDisabled ? undefined : answersDraftKey(pageId, shareToken ? `t:${shareToken}` : userId ? `u:${userId}` : 'anon');
+  const readOnly = submitDisabled || (shareToken !== undefined && !form.public);
+  const answersKey = readOnly ? undefined : answersDraftKey(pageId, shareToken ? `t:${shareToken}` : userId ? `u:${userId}` : 'anon');
 
   async function handleSubmit(values: Record<string, unknown>): Promise<FormSubmitOutcome> {
     // FormRenderer's local state is intentionally untyped (a checkbox's bool,
@@ -120,7 +121,7 @@ export function FormPageView({ pageId, space, markdown, choices, canEdit, shareT
         choices={choices}
         submitButtonLabel={form.submitButton}
         onSubmit={handleSubmit}
-        submitDisabled={submitDisabled}
+        submitDisabled={readOnly}
         draftKey={answersKey}
       />
 

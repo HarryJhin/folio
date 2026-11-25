@@ -310,6 +310,14 @@ describe('Connect with GitHub (OAuth App) over HTTP', () => {
 });
 
 describe('redactRequestUrl', () => {
+  it('hides share and artifact grants while keeping route names visible', () => {
+    expect(redactRequestUrl('/api/share/example/forms/form-1/submit')).toBe('/api/share/[redacted]/forms/form-1/submit');
+    expect(redactRequestUrl('/share/example')).toBe('/share/[redacted]');
+    expect(redactRequestUrl('/art/guest/example/index.html')).toBe('/art/guest/[redacted]/index.html');
+    expect(redactRequestUrl('/art/example/index.html')).toBe('/art/[redacted]/index.html');
+    expect(redactRequestUrl('/files/a?size=2&share=example')).toBe('/files/a?size=2&share=[redacted]');
+  });
+
   it('hides the query string of OAuth callbacks only', () => {
     expect(redactRequestUrl('/api/auth/github-connect/callback?code=abc&state=def')).toBe('/api/auth/github-connect/callback?[redacted]');
     expect(redactRequestUrl('/api/auth/google/callback?code=abc')).toBe('/api/auth/google/callback?[redacted]');

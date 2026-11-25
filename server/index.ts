@@ -98,7 +98,7 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : SERVER_PORT;
 // TRUST_PROXY (server/trustProxy.ts): off unless the operator says how many
 // reverse proxies sit in front, so a client can't forge X-Forwarded-For.
 const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
-// Same as `logger: true`, except OAuth callback query strings (one-time codes) are redacted — see logRedaction.ts.
+// Redact OAuth credentials and guest reading grants in request URLs.
 const app = Fastify({ logger: { level: 'info', serializers: requestLogSerializers }, trustProxy });
 app.decorateRequest('authUser', null);
 

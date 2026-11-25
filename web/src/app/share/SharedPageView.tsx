@@ -337,7 +337,7 @@ function SharedPageBody({ payload, token, headerActions }: { payload: SharedPage
     // would 401 for a guest anyway.
     return (
       <div className="mx-auto w-full max-w-xl">
-        <FormPageView pageId={page.id} markdown={page.markdown ?? ''} choices={page.formChoices} canEdit={false} shareToken={token} />
+        <FormPageView pageId={page.id} markdown={page.markdown ?? ''} choices={page.formChoices} canEdit={false} shareToken={token} submitDisabled={isChild} />
       </div>
     );
   }

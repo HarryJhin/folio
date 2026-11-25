@@ -17,7 +17,7 @@ import { buildArtifactPayload } from './artifact/service.js';
 /** No reader named: a canvas's file cards open nothing (the safe default; every route names its reader). */
 const NOBODY: CanvasReader = { kind: 'share', pageIds: new Set() };
 
-/** `reader` decides what a canvas's file cards show (server/canvasView.ts); every other kind ignores it. */
+/** The reader determines visible canvas cards, form choices and artifact file access. */
 export async function buildPageDoc(entry: PageIndexEntry, reader: CanvasReader = NOBODY): Promise<PageDoc> {
   const meta = storage.toPageMeta(entry);
   if (entry.kind === 'doc') {
@@ -45,7 +45,7 @@ export async function buildPageDoc(entry: PageIndexEntry, reader: CanvasReader =
   if (entry.kind === 'base') return { ...meta };
   // An artifact: its manifest and files, with signed /art URLs minted for THIS reader (state on the server only for a signed-in one).
   if (entry.kind === 'artifact') {
-    return { ...meta, artifact: await buildArtifactPayload(entry, reader.kind === 'user' ? { kind: 'user', userId: reader.userId } : { kind: 'anonymous' }) };
+    return { ...meta, artifact: await buildArtifactPayload(entry, reader) };
   }
   return { ...meta, svg: await storage.readBoardSvg(entry.id) };
 }
