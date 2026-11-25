@@ -87,6 +87,7 @@ All settings live in the `.env` file next to `docker-compose.yml`. Copy
 | `FOLIO_DOMAIN` | — | Domain for the bundled HTTPS proxy. |
 | `FOLIO_SECRET` | generated | Encrypts saved git tokens and AI keys. See below. |
 | `POSTGRES_PASSWORD` | `folio` | Database password, applied when the database is first created. |
+| `FOLIO_AUTO_SSO_PROVIDER` | — | Set to an enabled provider slug to start SSO automatically on first visit. Use `/login?local` for emergency administrator sign-in. |
 | `FOLIO_OIDC_SSO_ISSUER`, `FOLIO_OIDC_SSO_CLIENT_ID`, `FOLIO_OIDC_SSO_CLIENT_SECRET` | — | Single sign-on through an OpenID Connect provider (Keycloak, Authentik, Entra ID, Okta…). More `FOLIO_OIDC_SSO_*` settings below; see [Single sign-on](#single-sign-on-openid-connect). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | Turn on "Sign in with Google". |
 | `GOOGLE_ALLOWED_DOMAINS` | empty | Email domains allowed to sign in with Google, comma-separated. Empty means nobody new gets in. |

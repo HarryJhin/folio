@@ -12,6 +12,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   window.history.replaceState({}, '', '/');
 });
@@ -31,16 +32,37 @@ function stubFetch(discover: SsoDiscoverResult) {
   return fn;
 }
 
-function renderLogin() {
+function renderLogin(autoSsoProvider?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <LoginScreen onDone={() => {}} ssoProviders={PROVIDERS} />
+      <LoginScreen onDone={() => {}} ssoProviders={PROVIDERS} autoSsoProvider={autoSsoProvider} />
     </QueryClientProvider>,
   );
 }
 
 describe('LoginScreen: single sign-on', () => {
+  it('starts the configured provider on a fresh visit and offers manual retry if the browser returns without a session', async () => {
+    const first = renderLogin('corp');
+    expect(screen.queryByText('Log in to Folio')).toBeNull();
+    await waitFor(() => expect(sessionStorage.getItem('folio:sso:auto-start')).toBe('corp'));
+    first.unmount();
+    renderLogin('corp');
+    expect(screen.getByRole('link', { name: 'Continue with Corp SSO' })).toBeTruthy();
+  });
+
+  it.each(['/login?local', '/?authError=denied'])('keeps recovery and sign-in errors visible at %s', (url) => {
+    window.history.replaceState({}, '', url);
+    renderLogin('corp');
+    expect(screen.getByText('Log in to Folio')).toBeTruthy();
+    expect(sessionStorage.getItem('folio:sso:auto-start')).toBeNull();
+  });
+
+  it('keeps manual sign-in when the configured provider is not enabled', () => {
+    renderLogin('retired');
+    expect(screen.getByLabelText('Password')).toBeTruthy();
+  });
+
   it('shows one button per provider, Google with its own label', () => {
     stubFetch({ provider: null, enforced: false });
     renderLogin();
