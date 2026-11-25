@@ -80,7 +80,7 @@ export function SharedPageView() {
   const ownAccess = searchParams.get('as') === 'guest' ? undefined : data?.ownAccess;
   useEffect(() => {
     if (!ownAccess) return;
-    const target = `/s/${encodeURIComponent(ownAccess.space)}/p/${encodeURIComponent(ownAccess.pageId)}${window.location.hash}`;
+    const target = `/s/${encodeURIComponent(ownAccess.space)}/p/${encodeURIComponent(ownAccess.pageId)}?via=share${window.location.hash}`;
     window.location.replace(target);
   }, [ownAccess]);
 

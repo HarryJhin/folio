@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,11 +9,14 @@ import { useOfflineReaderSession } from '../offline/useOfflineReaderSession';
 import { AssistantEnabledContext } from '../assistant/availability';
 import { initAnalytics } from '../../analytics';
 import { reconcileLanguageFromProfile } from '../../i18n';
+import { useActivitySession } from './useActivitySession';
 import { resolveSpaceRole } from './roles';
 import { SetupScreen } from './SetupScreen';
 import { LoginScreen, rememberAutoSsoAttempt } from './LoginScreen';
 import { publicHomeUrl, publicPageUrl, publicSiteInfoKey, publicUrlForAppPath } from '../public/publicSite';
 import '../i18n/register';
+
+const RESUME_KEY = 'folio:session:resume';
 
 const STARS_QUERY_KEY = ['stars'] as const;
 
@@ -90,6 +93,30 @@ export function AuthProvider({ children }: AuthProviderProps) {
     queryFn: api.getAuthState,
   });
   useOfflineReaderSession(auth);
+  const checkingDeadline = useActivitySession(auth);
+  const interruptedSession = useRef(false);
+  const { pathname, search, hash } = useLocation();
+  const navigate = useNavigate();
+  useLayoutEffect(() => {
+    if (auth.data?.user) interruptedSession.current = !!auth.data.activitySessionExpiresAt;
+    try {
+      if (checkingDeadline) {
+        // An IdP sees the path and query. The fragment can disappear at its sign-in form.
+        sessionStorage.setItem(RESUME_KEY, pathname + search + hash);
+      } else if (auth.data?.user) {
+        sessionStorage.removeItem(RESUME_KEY);
+      } else {
+        const saved = sessionStorage.getItem(RESUME_KEY);
+        const address = pathname + search;
+        if (saved && saved.split('#', 1)[0] === address) {
+          interruptedSession.current = true;
+          if (!hash && saved.length > address.length) {
+            navigate({ pathname, search, hash: saved.slice(address.length) }, { replace: true });
+          }
+        }
+      }
+    } catch { /* A private window can disable sessionStorage. */ }
+  }, [auth.data?.user, auth.data?.activitySessionExpiresAt, checkingDeadline, pathname, search, hash, navigate]);
   const { data, isLoading, isError, refetch } = auth;
 
   // Round 10: brings a device that's never set localStorage in line with the
@@ -129,6 +156,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // in on the same browser never sees a flash of the previous session's
       // data; then re-fetch auth state to drop to the login screen.
       if (data?.autoSsoProvider) rememberAutoSsoAttempt(data.autoSsoProvider);
+      interruptedSession.current = false;
       queryClient.clear();
       void refetch();
     },
@@ -136,6 +164,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   if (isLoading) {
     return <CenteredMessage>{t('auth.loading')}</CenteredMessage>;
+  }
+
+  // The proxy and Folio can expire together. A fetch redirected to a sign-in
+  // origin cannot complete the login. A top-level reload carries the original
+  // route, query and fragment through the normal gateway flow.
+  if (checkingDeadline) {
+    return (
+      <CenteredMessage>
+        {t(isError || auth.isPaused ? 'auth.connectionError' : 'auth.loading')}{' '}
+        <button type="button" onClick={() => window.location.reload()} className="underline underline-offset-2">
+          {t('newVersion.reload')}
+        </button>
+      </CenteredMessage>
+    );
   }
 
   if (isError || !data) {
@@ -154,7 +196,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   if (!data.user) {
-    return <GuestGate onDone={() => refetch()} google={data.google} ssoProviders={data.ssoProviders} autoSsoProvider={data.autoSsoProvider} demo={data.demo} />;
+    // A private editor interrupted by expiry needs to return here after login,
+    // even when the space also has a public site.
+    const Gate = interruptedSession.current ? LoginScreen : GuestGate;
+    return <Gate onDone={() => refetch()} google={data.google} ssoProviders={data.ssoProviders} autoSsoProvider={data.autoSsoProvider} demo={data.demo} />;
   }
 
   const value: AuthContextValue = {
@@ -166,7 +211,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   return (
     <AuthContext.Provider value={value}>
-      <SigninParamCleaner />
+      <EntryParamCleaner />
       <AssistantEnabledContext.Provider value={!data.assistantDisabled}>{children}</AssistantEnabledContext.Provider>
     </AuthContext.Provider>
   );
@@ -210,14 +255,16 @@ function GuestGate(loginProps: ComponentProps<typeof LoginScreen>) {
   return <LoginScreen {...loginProps} />;
 }
 
-/** Drops `?signin=1` once the visitor has signed in, so the address bar does not keep a flag that no longer means anything. */
-function SigninParamCleaner() {
+/** Drop one-time entry parameters once the private app has consumed them. */
+function EntryParamCleaner() {
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (!params.has('signin')) return;
+    const fromShare = params.get('via') === 'share';
+    if (!params.has('signin') && !fromShare) return;
     params.delete('signin');
+    if (fromShare) params.delete('via');
     const search = params.toString();
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash }, { replace: true });
   }, [location.pathname, location.search, location.hash, navigate]);

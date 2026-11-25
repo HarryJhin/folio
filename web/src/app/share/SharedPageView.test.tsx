@@ -277,7 +277,7 @@ describe('SharedPageView — own account', () => {
     stubFetchByUrl({ '/api/share/t1': docPayload({}, { ownAccess: { space: 'sp', pageId: 'root1' } }) });
     renderShare('/share/t1');
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/s/sp/p/root1#sec'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/s/sp/p/root1?via=share#sec'));
     expect(screen.queryByTestId('markdown-body')).toBeNull();
   });
 
