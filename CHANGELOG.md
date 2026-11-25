@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Removed the “What is Folio?” badge and its product introduction from shared pages.
+
 - Private attachments now require current Folio credentials. Published pages and share links check file access at read time, and guest editing preserves the original file grants. Shared PDF and Office pages now open in the same read-only viewers as published files.
 
 - Pocket ID browser sessions can now expire after 14 days of inactivity and require a fresh passkey after 30 days. Operators can enable this for one OIDC provider.
