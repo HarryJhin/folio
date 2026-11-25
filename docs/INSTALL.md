@@ -102,7 +102,9 @@ All settings live in the `.env` file next to `docker-compose.yml`. Copy
 | `PUBLIC_ASSISTANT_RUNS_PER_HOUR` | `20` | Questions one address may ask Folio AI per hour across all public sites. |
 | `PUBLIC_ASSISTANT_SPACE_RUNS_PER_HOUR` | `200` | Questions all visitors of one public site together may ask Folio AI per hour. |
 | `TRUST_PROXY` | off | Set `true` behind a reverse proxy on the same host or Docker network so the sign-in rate limit is per visitor instead of one shared bucket. Only a proxy on a loopback or private address is believed. |
-| `FOLIO_SESSION_TTL_DAYS` | `30` | How long a browser sign-in lasts, in days, counted from sign-in (not extended while the person works). A missing or invalid value keeps 30. |
+| `FOLIO_SESSION_TTL_DAYS` | `30` | Lifetime from sign-in for ordinary browser sessions, including local password recovery. |
+| `FOLIO_ACTIVITY_SESSION_PROVIDER` | off | Exact OIDC provider slug for the Pocket ID passkey policy. Foreground use extends the idle deadline to 14 days. A fresh passkey is required after 30 days. |
+| `FOLIO_SESSION_PROXY_PREFIX` | empty | Same-origin OAuth2 Proxy prefix, for example `/oauth2`. After a managed sign-in Folio renews the proxy cookie and returns to the requested page. |
 | `FOLIO_DEMO_MODE` | off | `1` turns on public-demo mode for running your own demo: one-click demo accounts and a banner, and tokens, the assistant, outbound git and import, new spaces, share links and invitations are disabled. The accounts it offers are listed in `FOLIO_DEMO_ACCOUNTS` (a JSON array, in single quotes in `.env`); `FOLIO_DEMO_RESET_HOURS`, `FOLIO_DEMO_MAX_UPLOAD_MB`, `FOLIO_DEMO_MCP_RPM` and `FOLIO_DEMO_MCP_WRITES_PER_HOUR` are optional. See `.env.example`. |
 | `FOLIO_DEFAULT_REPO_URL` | empty | Prefilled into the repository field of the "create space" dialog. |
 | `CURSOR_AGENT_TIMEOUT_MS`, `CURSOR_AGENT_TIMEOUT_MS_AGENT`, `CURSOR_AGENT_IDLE_TIMEOUT_MS` | `300000`, `1800000`, `600000` | Deadlines of one assistant run in milliseconds: Ask mode, Agent mode, and no activity at all. Empty keeps the default. |
@@ -275,6 +277,26 @@ Outside the bundled compose file (or to add a second provider) use any slug:
 `<PUBLIC_URL>/api/auth/oidc/<slug>/callback` (the admin screen shows it with a
 copy button). An `http://` issuer is accepted for `localhost` only, or with
 `FOLIO_OIDC_ALLOW_HTTP=1`.
+
+With the activity policy enabled, the provider must return a signed ID token
+with a recent `auth_time` and `phr` in `amr`. Folio requests `max_age=120` so it
+can use a passkey just verified at the proxy. An open background tab does not
+extend the deadline. The sign-in cookie expires at the 30-day cap. Folio checks
+the earlier idle deadline on the server for each session. Activity responses never
+replace a cookie set by a later sign-in in another tab. Existing browser sessions
+keep their original expiry.
+To require reauthentication at rollout, revoke the affected users’ existing
+browser sessions after confirming a new sign-in and local recovery.
+
+When setting the proxy prefix, register both clients with the same Pocket ID
+issuer and keep their account restrictions in place. Give the proxy a 30-day
+cookie with refresh disabled only if each private resource also enforces the
+application session policy. The proxy cookie alone has no idle timeout.
+If a link must retain its `#fragment` when both cookies have expired, use
+OAuth2 Proxy’s standard sign-in page (`--skip-provider-button=false`).
+That page copies the browser fragment into the return address before the
+user continues to the identity provider. An immediate server redirect only
+receives the path and query.
 
 How accounts are matched: the provider's account id (`sub`) is linked to one
 Folio account. At the first sign-in, an existing Folio account with the same email

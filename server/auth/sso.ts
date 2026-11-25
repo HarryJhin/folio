@@ -219,6 +219,7 @@ export async function finishSsoSignIn(
     /** The page the person opened before signing in (validated at the start and again here); default: the app root. */
     returnTo?: string;
     protocol: 'oidc' | 'saml';
+    browserSession?: { authenticatedAt: Date; proxyPrefix?: string };
     fail: (code: SsoErrorCode, detail?: string) => FastifyReply;
   },
 ): Promise<FastifyReply> {
@@ -247,9 +248,19 @@ export async function finishSsoSignIn(
   });
   // Every kind of sign-in (existing, linked, invite, JIT), OIDC and SAML alike — the account exists by now. Never fails the sign-in.
   await syncIdpGroups(outcome.userId, provider.id, provider.kind, mapped.groups, { provider, overage: mapped.groupsOverage });
-  const { token } = await store.createSession(outcome.userId, { userAgent: request.headers['user-agent'], ip: request.ip });
-  session.setSessionCookie(reply, token);
-  return reply.redirect(`${publicUrlOrOrigin(requestOrigin(request))}${safeAppPath(input.returnTo) ?? '/'}`);
+  const client = { userAgent: request.headers['user-agent'], ip: request.ip };
+  const { token, credentialExpiresAt } = await store.createSession(outcome.userId, client, input.browserSession?.authenticatedAt);
+  session.setSessionCookie(reply, token, credentialExpiresAt);
+  const origin = publicUrlOrOrigin(requestOrigin(request));
+  const destination = safeAppPath(input.returnTo) ?? '/';
+  const prefix = input.browserSession?.proxyPrefix;
+  if (prefix) {
+    const start = new URL(`${prefix}/start`, origin);
+    const pathname = new URL(destination, origin).pathname;
+    start.searchParams.set('rd', pathname === prefix || pathname.startsWith(`${prefix}/`) ? '/' : destination);
+    return reply.redirect(start.href);
+  }
+  return reply.redirect(`${origin}${destination}`);
 }
 
 /** 403 `sso_required`: the login screen then sends the person to the provider (POST /api/auth/sso/discover names it). */

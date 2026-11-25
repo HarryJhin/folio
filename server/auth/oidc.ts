@@ -48,6 +48,28 @@ const FLOW_COOKIE = 'folio_oidc';
 const FLOW_COOKIE_PATH = '/api/auth';
 const FLOW_TTL_SECONDS = 10 * 60;
 const DISCOVERY_TTL_MS = 60 * 60 * 1000;
+// Reuse a passkey ceremony just completed for the front proxy on the same issuer.
+const PASSKEY_HANDOFF_SECONDS = 120;
+
+function activityLogin(provider: AuthProvider): boolean {
+  return provider.slug === process.env.FOLIO_ACTIVITY_SESSION_PROVIDER?.trim();
+}
+
+/** Only the validated ID token attests when and how the user authenticated. */
+function browserSessionEvidence(claims: client.IDToken): { authenticatedAt: Date; proxyPrefix?: string } {
+  const now = Math.floor(Date.now() / 1000);
+  const at = claims.auth_time;
+  if (typeof at !== 'number' || !Number.isSafeInteger(at) || at < now - PASSKEY_HANDOFF_SECONDS || at > now + 5 ||
+      !Array.isArray(claims.amr) || !claims.amr.includes('phr')) {
+    throw new Error('The provider must confirm a recent phishing-resistant authentication');
+  }
+
+  const proxyPrefix = process.env.FOLIO_SESSION_PROXY_PREFIX?.trim();
+  if (proxyPrefix && !/^\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+$/.test(proxyPrefix)) {
+    throw new Error('FOLIO_SESSION_PROXY_PREFIX must be a local path prefix');
+  }
+  return { authenticatedAt: new Date(Math.min(at, now) * 1000), proxyPrefix };
+}
 
 // ---------------------------------------------------------------------------
 // openid-client configuration (discovery cached per provider version)
@@ -238,6 +260,7 @@ async function startHandler(request: FastifyRequest, reply: FastifyReply, slug: 
     code_challenge: await client.calculatePKCECodeChallenge(verifier),
     code_challenge_method: 'S256',
   };
+  if (activityLogin(provider) && !testMode) params.max_age = String(PASSKEY_HANDOFF_SECONDS);
   if (typeof q.login_hint === 'string' && q.login_hint.length < 320) params.login_hint = q.login_hint;
   // Google knows no prompt=login; elsewhere a test always shows the provider's sign-in, not a remembered session.
   if (provider.issuer === providers.GOOGLE_ISSUER) params.prompt = 'select_account';
@@ -270,6 +293,8 @@ async function callbackHandler(request: FastifyRequest, reply: FastifyReply, slu
 
   let config: client.Configuration;
   let claims: Record<string, unknown>;
+  const managed = !testMode && activityLogin(provider);
+  let browserSession: ReturnType<typeof browserSessionEvidence> | undefined;
   try {
     config = await clientConfigFor(provider);
     const search = new URL(request.raw.url ?? '', 'http://callback.invalid').search;
@@ -279,9 +304,11 @@ async function callbackHandler(request: FastifyRequest, reply: FastifyReply, slu
       expectedState: flow.state,
       expectedNonce: flow.nonce,
       idTokenExpected: true,
+      ...(managed ? { maxAge: PASSKEY_HANDOFF_SECONDS } : {}),
     });
     const idClaims = tokens.claims();
     if (!idClaims) throw new Error('no id_token');
+    if (managed) browserSession = browserSessionEvidence(idClaims);
     claims = { ...idClaims } as Record<string, unknown>;
     if (config.serverMetadata().userinfo_endpoint && tokens.access_token) {
       try {
@@ -311,6 +338,7 @@ async function callbackHandler(request: FastifyRequest, reply: FastifyReply, slu
     inviteToken: flow.mode === 'invite' ? flow.invite : undefined,
     returnTo: flow.returnTo,
     protocol: 'oidc',
+    browserSession,
     fail,
   });
 }

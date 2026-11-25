@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { KeyRound } from 'lucide-react';
 import type { DemoInfo, SsoDiscoverResult, SsoProviderPublic } from '@shared/contracts';
@@ -84,12 +84,18 @@ function useSsoAuthError(): string | null {
 }
 
 const AUTO_SSO_ATTEMPT = 'folio:sso:auto-start';
+const SHARED_SSO_UNTIL = 'folio:sso:in-progress';
+// The OIDC state cookie belongs to the browser and lasts ten minutes (server/auth/oidc.ts).
+const FLOW_LIFETIME_MS = 10 * 60_000;
 
 /** A tab that was signed out or just tried automatic SSO must wait for an explicit retry. */
 export function rememberAutoSsoAttempt(provider: string | null) {
   try {
     if (provider) window.sessionStorage.setItem(AUTO_SSO_ATTEMPT, provider);
-    else window.sessionStorage.removeItem(AUTO_SSO_ATTEMPT);
+    else {
+      window.sessionStorage.removeItem(AUTO_SSO_ATTEMPT);
+      window.localStorage.removeItem(SHARED_SSO_UNTIL);
+    }
     return true;
   } catch {
     return false;
@@ -114,15 +120,67 @@ export function LoginScreen(props: LoginScreenProps) {
   // Freeze the initial decision: the manual form consumes ?authError and removes it from the URL.
   const [startUrl, setStartUrl] = useState(() => automaticStartUrl(props));
   const started = useRef(false);
+  const client = useQueryClient();
   useEffect(() => {
-    if (!startUrl || started.current) return;
-    started.current = true;
-    if (props.autoSsoProvider && rememberAutoSsoAttempt(props.autoSsoProvider)) {
-      window.location.replace(startUrl);
-    } else {
-      setStartUrl(null);
+    const refresh = (event: StorageEvent) => {
+      if (event.key === SHARED_SSO_UNTIL && event.newValue === null) {
+        void client.invalidateQueries({ queryKey: ['auth', 'state'] });
+      }
+    };
+    window.addEventListener('storage', refresh);
+    return () => window.removeEventListener('storage', refresh);
+  }, [client]);
+
+  useEffect(() => {
+    const provider = props.autoSsoProvider;
+    if (!startUrl || !provider) return;
+    let disposed = false;
+    let busy = false;
+    let waitedForFocus = false;
+    const foreground = () => document.visibilityState === 'visible' && document.hasFocus();
+    function start() {
+      if (disposed || started.current || !foreground()) return;
+      if (Number(localStorage.getItem(SHARED_SSO_UNTIL)) > Date.now() || !rememberAutoSsoAttempt(provider!)) {
+        setStartUrl(null);
+        return;
+      }
+      localStorage.setItem(SHARED_SSO_UNTIL, String(Date.now() + FLOW_LIFETIME_MS));
+      started.current = true;
+      window.location.replace(startUrl!);
     }
-  }, [startUrl, props.autoSsoProvider]);
+    async function resume() {
+      if (!foreground()) {
+        waitedForFocus = true;
+        return;
+      }
+      if (disposed || busy || started.current) return;
+      busy = true;
+      try {
+        // A background tab can have been parked at login since before another
+        // tab completed the challenge. The auth gate observes this same query.
+        if (waitedForFocus) {
+          const state = await client.fetchQuery({ queryKey: ['auth', 'state'], queryFn: api.getAuthState, staleTime: 0, retry: false, networkMode: 'always' });
+          if (state.user) return;
+        }
+        // Serialize the brief localStorage claim. The marker survives the
+        // top-level cross-origin round trip after the Web Lock is released.
+        if (navigator.locks) await navigator.locks.request(SHARED_SSO_UNTIL, start);
+        else start();
+      } catch {
+        if (!disposed) setStartUrl(null);
+      } finally {
+        busy = false;
+      }
+    }
+    void resume();
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => {
+      disposed = true;
+      window.removeEventListener('focus', resume);
+      document.removeEventListener('visibilitychange', resume);
+    };
+  }, [client, startUrl, props.autoSsoProvider]);
   if (startUrl) return <div role="status" className="grid h-full place-items-center">{t('auth.loading')}</div>;
   return <ManualLoginScreen {...props} />;
 }

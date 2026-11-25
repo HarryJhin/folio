@@ -63,8 +63,10 @@ async function resolveUserIdentifier(identifier: string) {
 /** GET /api/auth/state, POST /api/auth/setup, POST /api/auth/login — the only public auth routes. */
 export function registerPublicAuthRoutes(app: FastifyInstance): void {
   app.get('/api/auth/state', async (request) => {
-    const user = await session.userForRequest(request);
+    const auth = await session.resolveAuth(request);
+    const user = auth?.user ?? null;
     const state: AuthState = {
+      activitySessionExpiresAt: auth?.activitySessionExpiresAt,
       needsSetup: !(await store.hasAnyUsers()),
       user,
       memberships: user ? await session.membershipsFor(user) : {},

@@ -18,6 +18,7 @@ import * as roles from '../access/roles.js';
 import { roleAtLeast } from '../access/roles.js';
 import { isAgentPath } from '../agentPath.js';
 import { normalizePublicUrl } from '../publicUrl.js';
+import { extendSessionConnections, SESSION_ENDED_CLOSE_CODE, trackConnection, type ClosableSocket } from '../liveConnections.js';
 import { setSentryUser } from '../sentry.js';
 import { isPublicPage, publicReadablePageIds } from '../publicSites.js';
 
@@ -213,12 +214,13 @@ export function cookiesSecure(): boolean {
   return !(raw && normalizePublicUrl(raw).toLowerCase().startsWith('http://'));
 }
 
-export function setSessionCookie(reply: FastifyReply, token: string): void {
+export function setSessionCookie(reply: FastifyReply, token: string, expiresAt?: string): void {
   reply.setCookie(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: cookiesSecure(),
-    maxAge: Math.floor(store.sessionTtlMs() / 1000),
+    // An activity response must never overwrite a newer login from another tab. Set the credential only at sign-in.
+    ...(expiresAt ? { expires: new Date(expiresAt) } : { maxAge: Math.floor(store.sessionTtlMs() / 1000) }),
     path: '/',
   });
 }
@@ -254,10 +256,11 @@ export function parseCookieHeader(header: string | undefined): Record<string, st
 // ---------------------------------------------------------------------------
 
 /** Resolves a raw token to its User; self-heals (destroys all sessions) for a disabled account. */
-export async function userForToken(token: string | undefined | null): Promise<User | null> {
+export async function authForSessionToken(token: string | undefined | null): Promise<ResolvedAuth | null> {
   if (!token) return null;
-  const userId = await store.resolveSessionUserId(token);
-  if (!userId) return null;
+  const identity = await store.resolveSession(token);
+  if (!identity) return null;
+  const { userId, activitySessionExpiresAt } = identity;
   const stored = await store.findStoredUserById(userId);
   if (!stored) return null;
   // A system account never holds a session (store.createSession refuses it); should a row ever appear, it authenticates nothing.
@@ -267,7 +270,44 @@ export async function userForToken(token: string | undefined | null): Promise<Us
     return null;
   }
   const { passwordHash: _passwordHash, ...user } = stored;
-  return user;
+  return { user, activitySessionExpiresAt };
+}
+
+export async function userForToken(token: string | undefined | null): Promise<User | null> {
+  return (await authForSessionToken(token))?.user ?? null;
+}
+
+interface SessionSocket extends ClosableSocket {
+  pause(): void;
+  resume(): void;
+  emit(event: string | symbol, ...args: unknown[]): boolean;
+  send(...args: unknown[]): void;
+}
+
+/** Register first: a concurrent revocation then either removes the row before this read or closes the tracked socket. */
+export async function openSessionSocket(userId: string, token: string, socket: SessionSocket, start: () => void): Promise<void> {
+  socket.pause(); // Keep the client's first sync frame buffered until the application listeners are installed.
+  const active = trackConnection(userId, token, socket);
+  let admitted = false;
+  const emit = socket.emit.bind(socket);
+  socket.emit = (event, ...args) => (event !== 'message' || (admitted && active())) && emit(event, ...args);
+  const send = socket.send.bind(socket);
+  socket.send = (...args) => { if (admitted && active()) send(...args); };
+  try {
+    const verified = await store.resolveSession(token);
+    if (!verified || verified.userId !== userId) {
+      socket.close(SESSION_ENDED_CLOSE_CODE, 'session ended');
+      return;
+    }
+    if (verified.activitySessionExpiresAt) extendSessionConnections(token, verified.activitySessionExpiresAt);
+    if (!active()) return;
+    admitted = true;
+    start();
+  } catch {
+    socket.close(1011, 'session socket could not start');
+  } finally {
+    socket.resume();
+  }
 }
 
 export function extractBearerToken(request: FastifyRequest): string | undefined {
@@ -281,6 +321,7 @@ function extractBearerPat(request: FastifyRequest): string | undefined {
 
 export interface ResolvedAuth {
   user: User;
+  activitySessionExpiresAt?: string;
   /** Set only for a PAT-authenticated request. Cookie sessions never carry a scope restriction. */
   tokenScopes?: ApiTokenScope[];
   tokenId?: string;
@@ -306,11 +347,11 @@ async function resolvePat(request: FastifyRequest): Promise<ResolvedAuth | null>
 
 export async function resolveAuth(request: FastifyRequest): Promise<ResolvedAuth | null> {
   const cookieToken = request.cookies?.[SESSION_COOKIE_NAME];
-  const cookieUser = await userForToken(cookieToken);
-  if (cookieUser) {
+  const cookieAuth = await authForSessionToken(cookieToken);
+  if (cookieAuth) {
     // Throttled bookkeeping for the session list ("last active", device, address); request.ip is the real client address only with TRUST_PROXY.
     if (cookieToken) store.touchSession(cookieToken, { userAgent: request.headers['user-agent'], ip: request.ip });
-    return { user: cookieUser };
+    return cookieAuth;
   }
   return resolvePat(request);
 }

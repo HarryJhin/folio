@@ -21,15 +21,26 @@ import type {
   User,
 } from '../../shared/contracts.js';
 import { conflict, forbidden, notFound } from '../errors.js';
-import { query, queryOne } from '../db/pool.js';
+import { query, queryOne, withTransaction } from '../db/pool.js';
 import { recordAudit } from '../audit.js';
-import { disconnectSessions, disconnectUser } from '../liveConnections.js';
+import { disconnectSessions, disconnectUser, extendSessionConnections } from '../liveConnections.js';
 import { revokeAllOAuthAccessForUser } from '../oauth/store.js';
 import { serverText } from '../serverText.js';
 import { effectiveRolesSql } from '../access/roleSql.js';
 import { SPACE_ADMINS_COUNT_SQL } from '../groups/store.js';
 
 const DEFAULT_SESSION_TTL_DAYS = 30;
+const DAY_MS = 86_400_000;
+const BROWSER_IDLE_MS = 14 * DAY_MS;
+const BROWSER_AUTH_LIFETIME_MS = 30 * DAY_MS;
+
+function browserAbsoluteExpiry(authenticated: Date): number {
+  return authenticated.getTime() + BROWSER_AUTH_LIFETIME_MS;
+}
+
+function browserDeadline(activity: Date, authenticated: Date): Date {
+  return new Date(Math.min(activity.getTime() + BROWSER_IDLE_MS, browserAbsoluteExpiry(authenticated)));
+}
 
 /**
  * Absolute lifetime of a login session (no sliding expiry): FOLIO_SESSION_TTL_DAYS, default 30.
@@ -323,6 +334,8 @@ export async function updateUser(id: string, patch: UpdateUserInput, options: Up
 export interface CreatedSession {
   token: string;
   expiresAt: string;
+  /** A managed credential is written once. The database enforces the earlier idle deadline. */
+  credentialExpiresAt?: string;
 }
 
 /** Where a session was opened from — shown in the session list so a person can tell their devices apart. */
@@ -342,18 +355,24 @@ function cleanClientText(value: string | null | undefined, max: number): string 
 }
 
 /** Refuses (403) a system account: whatever path asked for it (login, Google, invite), a system user never gets a session. `client` (user agent, ip) is optional bookkeeping; the first authenticated request fills it in if the creator did not know it. */
-export async function createSession(userId: string, client: SessionClientInfo = {}): Promise<CreatedSession> {
+export async function createSession(userId: string, client: SessionClientInfo = {}, authenticatedAt?: Date): Promise<CreatedSession> {
   const token = randomBytes(32).toString('hex');
-  const expiresAt = new Date(Date.now() + sessionTtlMs());
+  const now = new Date();
+  const expiresAt = authenticatedAt ? browserDeadline(now, authenticatedAt) : new Date(now.getTime() + sessionTtlMs());
+  if (authenticatedAt && (!(expiresAt > now) || authenticatedAt > now)) throw forbidden('fresh authentication required');
   const rows = await query<{ token_hash: string }>(
-    `INSERT INTO sessions (token_hash, user_id, expires_at, user_agent, ip, last_seen_at)
-     SELECT $1::text, $2::uuid, $3::timestamptz, $4::text, $5::text, now()
+    `INSERT INTO sessions (token_hash, user_id, expires_at, user_agent, ip, last_seen_at, browser_authenticated_at, browser_active_at)
+     SELECT $1::text, $2::uuid, $3::timestamptz, $4::text, $5::text, now(), $6::timestamptz, $7::timestamptz
       WHERE NOT EXISTS (SELECT 1 FROM users WHERE id = $2::uuid AND is_system)
      RETURNING token_hash`,
-    [hashToken(token), userId, expiresAt, cleanClientText(client.userAgent, MAX_USER_AGENT_LENGTH), cleanClientText(client.ip, MAX_IP_LENGTH)],
+    [hashToken(token), userId, expiresAt, cleanClientText(client.userAgent, MAX_USER_AGENT_LENGTH), cleanClientText(client.ip, MAX_IP_LENGTH), authenticatedAt ?? null, authenticatedAt ? now : null],
   );
   if (rows.length === 0) throw forbidden('a system account cannot sign in');
-  return { token, expiresAt: expiresAt.toISOString() };
+  return {
+    token,
+    expiresAt: expiresAt.toISOString(),
+    ...(authenticatedAt && { credentialExpiresAt: new Date(browserAbsoluteExpiry(authenticatedAt)).toISOString() }),
+  };
 }
 
 /** A session is "seen" at most this often (in-memory first, then the same rule in SQL so several instances agree). */
@@ -430,17 +449,52 @@ export async function revokeSessionsForUser(userId: string, exceptToken?: string
   return rows.length;
 }
 
-/** Returns the session's userId, or undefined if the token is missing/expired (lazily pruning it). */
-export async function resolveSessionUserId(token: string): Promise<string | undefined> {
-  const row = await queryOne<{ user_id: string; expires_at: string }>('SELECT user_id, expires_at FROM sessions WHERE token_hash = $1', [
-    hashToken(token),
-  ]);
+interface SessionIdentity {
+  userId: string;
+  activitySessionExpiresAt?: string;
+}
+
+/** Expiration and cleanup use the same database clock; concurrent renewal cannot be deleted. */
+export async function resolveSession(token: string): Promise<SessionIdentity | undefined> {
+  const hash = hashToken(token);
+  const row = await queryOne<{ user_id: string; expires_at: Date; managed: boolean; active: boolean }>(
+    `SELECT user_id, expires_at, browser_authenticated_at IS NOT NULL AS managed,
+            expires_at > clock_timestamp() AS active FROM sessions WHERE token_hash = $1`, [hash],
+  );
   if (!row) return undefined;
-  if (new Date(row.expires_at).getTime() <= Date.now()) {
-    await query('DELETE FROM sessions WHERE token_hash = $1', [hashToken(token)]);
+  if (!row.active) {
+    await query('DELETE FROM sessions WHERE token_hash = $1 AND expires_at <= clock_timestamp()', [hash]);
     return undefined;
   }
-  return row.user_id;
+  return { userId: row.user_id, ...(row.managed && { activitySessionExpiresAt: row.expires_at.toISOString() }) };
+}
+
+export async function resolveSessionUserId(token: string): Promise<string | undefined> {
+  return (await resolveSession(token))?.userId;
+}
+
+/** undefined = no live session, null = fixed-lifetime session. Never trusts client time. */
+export async function recordBrowserActivity(token: string): Promise<string | null | undefined> {
+  const hash = hashToken(token);
+  const expiresAt = await withTransaction(async (client) => {
+    // Sample time AFTER acquiring the lock, including when another tab or a revocation held it.
+    const { rows: [row] } = await client.query<{
+      expires_at: Date; browser_active_at: Date | null; browser_authenticated_at: Date | null; now: Date;
+    }>(
+      `WITH locked AS MATERIALIZED (
+         SELECT expires_at, browser_active_at, browser_authenticated_at FROM sessions WHERE token_hash = $1 FOR UPDATE
+       ) SELECT locked.*, clock_timestamp() AS now FROM locked`, [hash],
+    );
+    if (!row || row.expires_at <= row.now) return undefined;
+    if (!row.browser_authenticated_at || !row.browser_active_at) return null;
+    // Keep the deadline monotone if the database clock moves back or two signals share one millisecond.
+    if (row.now <= row.browser_active_at) return row.expires_at.toISOString();
+    const deadline = browserDeadline(row.now, row.browser_authenticated_at);
+    await client.query('UPDATE sessions SET browser_active_at = $2, expires_at = $3 WHERE token_hash = $1', [hash, row.now, deadline]);
+    return deadline.toISOString();
+  });
+  if (expiresAt) extendSessionConnections(token, expiresAt);
+  return expiresAt;
 }
 
 export async function destroySession(token: string): Promise<void> {
