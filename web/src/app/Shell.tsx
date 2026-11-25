@@ -11,7 +11,7 @@ import { useLocalStorage } from './hooks';
 import { SetPagePresenceContext, type PagePresencePerson } from './presence';
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
-import { hiddenRootTarget, homeSpaces, readLastSpace, rememberLastSpace } from './lastSpace';
+import { hiddenRootTarget, homeSpaces, readLastSpace, rememberLastSpace, spaceEntryPath } from './lastSpace';
 import { OfflineRuntime } from './offline/OfflineRuntime';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { PageCrashed } from './routes/PageCrashed';
@@ -162,8 +162,12 @@ export function Shell() {
   }, [location.pathname]);
 
   if (bareRoot && loadingSpaces) return null;
-  const redirect = bareRoot && spaceList && hiddenRootTarget(spaceList, space, readLastSpace());
-  if (redirect) return <Navigate to={`/s/${redirect.slug}`} replace />;
+  if (bareRoot && spaceList) {
+    const destination = hiddenRootTarget(spaceList, space, readLastSpace()) ?? spaceList.spaces.find(item => item.slug === space);
+    if (destination) {
+      return <Navigate to={{ ...location, pathname: spaceEntryPath(destination, location.hash) }} replace />;
+    }
+  }
 
   return (
     <div className="flex h-full overflow-hidden bg-white dark:bg-neutral-950">

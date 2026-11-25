@@ -1269,7 +1269,7 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string 
       annotations: READ_ONLY,
       title: 'Resolve a Folio link to the page it shows',
       description:
-        'Turns a Folio URL or path the user pasted into the concrete page it displays: `/s/<space>` (no /p/) is the SPACE HOME PAGE (its index.md), not "the whole space"; `/s/<space>/p/<pageId>` is that page; `/s/<space>/d/<dir>` is the folder\'s index page. Call it whenever a message contains a Folio link, then read/edit THAT page (its `id`) and create new pages under `parentPathForChildren`.',
+        'Resolves a Folio document URL. `/s/<space>/home` resolves the space home document; bare space URLs also resolve that document for MCP even if the browser opens the graph; `/s/<space>/p/<pageId>` is that page; `/s/<space>/d/<dir>` is the folder\'s index page. Call it whenever a message contains a Folio link, then read/edit THAT page (its `id`) and create new pages under `parentPathForChildren`.',
       inputSchema: { url: z.string().describe('Full Folio URL or an app path starting with /s/') },
     },
     async ({ url }) => {
@@ -1279,8 +1279,8 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string 
       } catch {
         return errorResult('invalid url');
       }
-      const m = /^\/s\/([^/]+)(?:\/(p|d)\/(.+?))?\/?$/.exec(pathname);
-      if (!m) return errorResult('not a Folio page link: expected /s/<space>, /s/<space>/p/<id> or /s/<space>/d/<dir>');
+      const m = /^\/s\/([^/]+)(?:\/home|\/(p|d)\/(.+?))?\/?$/.exec(pathname);
+      if (!m) return errorResult('not a Folio page link: expected /s/<space>/home, /s/<space>/p/<id> or /s/<space>/d/<dir>');
       const space = decodeURIComponent(m[1]);
       let id: string;
       if (m[2] === 'p') {

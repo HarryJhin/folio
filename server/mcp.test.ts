@@ -769,6 +769,7 @@ describe('server/mcp.ts — search and fetch (ChatGPT deep research format; real
     expect(await check('get_page_metadata', { id: openDocId })).toMatchObject({ id: openDocId, headings: expect.any(Array), links: expect.any(Array), properties: expect.any(Object) });
     expect(await check('list_unresolved_links', { space: ownSpace })).toMatchObject({ links: expect.any(Array), total: expect.any(Number) });
     expect(await check('list_orphans', { space: ownSpace })).toMatchObject({ pages: expect.any(Array) });
+    expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/home` })).toMatchObject({ path: 'index.md' });
     expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/p/${openDocId}` })).toMatchObject({ id: openDocId, parentPathForChildren: expect.any(String) });
     expect((await check('folio_table_list', { space: ownSpace })).tables.map((x: { id: string }) => x.id)).toContain(tableId);
     expect(await check('folio_table_schema', { id: tableId })).toMatchObject({ rowCount: 0, columns: [expect.objectContaining({ id: 'species' })] });

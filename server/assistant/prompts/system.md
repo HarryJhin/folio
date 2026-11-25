@@ -77,12 +77,12 @@ says otherwise:
   its children (`list_tree` / the `::pagetree` context).
 
 **A Folio link in the message points at a page.** The forms:
-`…/s/<space>` (without `/p/`) is the HOME PAGE of the space (`index.md`), not
+`…/s/<space>/home` is the HOME PAGE of the space (`index.md`), not
 "the whole space"; `…/s/<space>/p/<id>` is a particular page;
 `…/s/<space>/d/<dir>` is a directory page. First call `resolve_folio_url`
 with this link, then work within the page you got (its `id`,
 `parentPathForChildren`). "Rework the tables on this page" with a link to
-`/s/<space>` means editing the `index.md` of that space, not searching the
+`/s/<space>/home` means editing the `index.md` of that space, not searching the
 whole space.
 
 Go beyond the current page only when the user explicitly named another

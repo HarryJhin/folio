@@ -27,7 +27,7 @@ audit of the current user of the session, without a separate token.
 
 | Tool | Purpose |
 |---|---|
-| `resolve_folio_url` | A Folio link (`/s/<space>`, `/s/<space>/p/<id>`, `/s/<space>/d/<dir>`) → a particular page (`id`, `path`, `parentPathForChildren`). `/s/<space>` without `/p/` = the home page of the space (`index.md`), NOT "the whole space". Call it first if the message contains a link |
+| `resolve_folio_url` | A Folio link (`/s/<space>`, `/s/<space>/p/<id>`, `/s/<space>/d/<dir>`) → a particular page (`id`, `path`, `parentPathForChildren`). `/s/<space>/home` = the home page of the space (`index.md`), NOT "the whole space". Call it first if the message contains a link |
 | `list_spaces` | The spaces available to the user: slug, name, number of pages, role |
 | `list_tree` | The full page tree of one space: id, title, kind, path, order |
 | `read_page` | One page by `id`: metadata + the full markdown body (doc), the scene (board), the definition and `etag` (form), the YAML (base), a readable outline (Obsidian canvas), `artifact` (manifest, file list) + `entryHtml` (the entry page's HTML, cut at 60 000 characters, `entryTruncated`) for an artifact; for a table — a note to use `folio_table_schema` |

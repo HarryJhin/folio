@@ -127,7 +127,7 @@ function safeDecode(segment: string): string | undefined {
 }
 
 const PAGE_RE = /^\/s\/([^/]+)\/p\/([^/]+)\/?$/;
-const SPACE_RE = /^\/s\/([^/]+)(?:\/(?:d\/.*)?)?$/;
+const SPACE_RE = /^\/s\/([^/]+)(?:\/(?:home\/?|d\/.*)?)?$/;
 const SHARE_RE = /^\/share\/([^/.]+)(?:\/p\/([^/]+))?\/?$/;
 const PUBLIC_PATH_RE = new RegExp(`^${PUBLIC_SITE_PATH_PREFIX}/([a-z0-9][a-z0-9-]*)(?:/p/([^/]+))?/?$`);
 const SITE_HOST_RE = /^\/(?:p\/([^/]+)\/?)?$/;
