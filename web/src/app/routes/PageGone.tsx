@@ -56,7 +56,7 @@ export function PageGone({ space }: PageGoneProps) {
           </ul>
         )}
       </div>
-      <Link to={space ? `/s/${encodeURIComponent(space)}` : '/'} className="text-sm text-blue-600 underline underline-offset-2 dark:text-blue-400">
+      <Link to={space ? `/s/${encodeURIComponent(space)}/home` : '/'} className="text-sm text-blue-600 underline underline-offset-2 dark:text-blue-400">
         {space ? t('routes.page.gone.spaceHome', { space }) : t('admin.backHome')}
       </Link>
     </div>

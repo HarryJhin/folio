@@ -53,8 +53,8 @@ const queryClient = new QueryClient({
 
 /**
  * App root: providers (react-query, toasts, router) + the route table.
- * `/` redirects to the first space; `/s/:space` is the space home (resolves
- * index.md); `/s/:space/p/:id` is a page by id; `/s/:space/d/*` is a
+ * `/` redirects to the first space; `/s/:space` opens its configured first view;
+ * `/s/:space/home` opens the home document; `/s/:space/p/:id` is a page by id; `/s/:space/d/*` is a
  * synthetic folder listing (round 3, git-native spaces); `/s/:space/settings`
  * is the space's "Site & PDF" settings; `/admin/access`
  * (round 27) is the instance-admin Access page — client-guarded, see
@@ -166,6 +166,7 @@ function AuthenticatedRoutes() {
         <Route path="/compare" element={<ComparePage />} />
         <Route path="/s/:space" element={<Shell />}>
           <Route index element={<SpaceHome />} />
+          <Route path="home" element={<SpaceHome />} />
           <Route path="p/:id" element={<PageView />} />
           <Route path="d/*" element={<FolderView />} />
           <Route

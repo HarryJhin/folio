@@ -19,6 +19,7 @@ describe('parseAppLink', () => {
     expect(parseAppLink(`/s/impl/p/${ID}/`, HOST)).toEqual({ space: 'impl', kind: 'page', id: ID });
     expect(parseAppLink(`/s/impl/p/${ID}?v=2#intro`, HOST)).toEqual({ space: 'impl', kind: 'page', id: ID });
     expect(parseAppLink('/s/impl', HOST)).toEqual({ space: 'impl', kind: 'dir', dir: '' });
+    expect(parseAppLink('/s/impl/home#intro', HOST)).toEqual({ space: 'impl', kind: 'dir', dir: '' });
     expect(parseAppLink('/s/impl/', HOST)).toEqual({ space: 'impl', kind: 'dir', dir: '' });
     expect(parseAppLink('/s/impl/d/docs/guides/', HOST)).toEqual({ space: 'impl', kind: 'dir', dir: 'docs/guides' });
   });
