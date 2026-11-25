@@ -11,6 +11,7 @@
  * route (list/create/change/revoke) is browser-session only: a PAT, whatever
  * its scope, never sees or mints a token (server/routes.ts).
  */
+import { refreshGuestSockets } from './guestSockets.js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { ShareLinkInfo, ShareLinkMode } from '../shared/contracts.js';
 import { query, queryOne, withTransaction } from './db/pool.js';
@@ -128,9 +129,11 @@ export async function getShareForRevoke(id: string): Promise<ShareForRevoke | un
  */
 export async function setShareIncludeChildren(id: string, includeChildren: boolean): Promise<void> {
   await query('UPDATE share_links SET include_children = $2 WHERE id = $1 AND revoked_at IS NULL', [id, includeChildren]);
+  refreshGuestSockets();
 }
 
 /** Soft revoke — the row stays (auditable), just no longer resolvable. */
 export async function revokeShare(id: string): Promise<void> {
   await query('UPDATE share_links SET revoked_at = now() WHERE id = $1', [id]);
+  refreshGuestSockets();
 }

@@ -1201,6 +1201,7 @@ export function registerRoutes(app: FastifyInstance): void {
         throw badRequest('markdown is required for a document page');
       }
       gitSync.recordEditor(entry.space, { name: user.name, email: user.email });
+      const previousFields = [entry.icon, entry.cover];
       if (body.markdown === undefined) {
         // icon/cover/order-only update (round 5 picker; round 22 tree "Up/Down"):
         // body untouched, immediate persist — neither icon/cover nor order is part of
@@ -1212,7 +1213,7 @@ export function registerRoutes(app: FastifyInstance): void {
           : await storage.readFreshDocBody(id);
         if (body.order !== undefined) await storage.setDocOrder(entry, body.order, currentBody);
         await storage.setDocIconCover(entry, icon, cover, currentBody);
-        await bindSubmittedAssets(user, id, '', [body.icon, body.cover]);
+        await bindSubmittedAssets(user, id, '', [body.icon, body.cover], '', previousFields);
         gitSync.noteActivity(entry.space);
         return storage.toPageMeta(await storage.requireEntry(id));
       }
@@ -1230,14 +1231,16 @@ export function registerRoutes(app: FastifyInstance): void {
       // (SHELL's tree reorder always sends order alone, same shape as an icon/cover-only
       // PUT) — not handled in this branch, same as icon/cover's own precedent above only
       // fully applies to the no-markdown path.
+      let previousBody = '';
+      const rememberBody = markdownBody.includes('/a/') ? (before: string) => { previousBody = before; } : undefined;
       let result;
       try {
-        result = await collab.editDocBody(id, markdownBody, iconOverride, coverOverride, body.baseRevision);
+        result = await collab.editDocBody(id, markdownBody, iconOverride, coverOverride, body.baseRevision, rememberBody);
       } catch (err) {
         if (err instanceof collab.RevisionConflictError) return reply.status(409).send({ error: err.message, code: err.code, currentRevision: err.currentRevision });
         throw err;
       }
-      await bindSubmittedAssets(user, id, markdownBody, [iconOverride, coverOverride]);
+      await bindSubmittedAssets(user, id, markdownBody, [iconOverride, coverOverride], previousBody, previousFields);
       gitSync.noteActivity(entry.space);
       return result;
     }

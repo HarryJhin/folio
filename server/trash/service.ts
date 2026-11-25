@@ -33,7 +33,7 @@ import * as git from '../git.js';
 import * as gitSync from '../gitSync.js';
 import * as collab from '../collab.js';
 import { decodeScenePayload, extractScenePayload } from '../confluenceWhiteboard.js';
-import { query, queryOne } from '../db/pool.js';
+import { query, queryOne, withTransaction } from '../db/pool.js';
 import { withSpaceLock } from '../db/redis.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { canReadTrashedTarget, MemberCache, resolveRestoredAccess } from './access.js';
@@ -55,6 +55,7 @@ export interface TrashRow {
   trash_path: string;
   children_count: number;
   /** kind='space': the full snapshot; any other kind: the page access rules the item carries (see ./access.ts); null when it carries none. */
+  legacy_attachment_scope: boolean;
   payload: (TrashPagePayload & Partial<TrashSpaceSnapshot>) | null;
 }
 
@@ -151,6 +152,20 @@ async function removeTrashFiles(row: TrashRow): Promise<void> {
   await cleanupEmptyTrashDirs(path.dirname(abs));
 }
 
+/** The restore marker takes a foreign-key lock before the first rename. Holding
+ * the parent row here serializes that claim with purge, before touching any files. */
+async function purgeAvailableRow(row: TrashRow): Promise<boolean> {
+  return withTransaction(async (client) => {
+    const item = await client.query('SELECT id FROM trash_items WHERE id = $1 FOR UPDATE', [row.id]);
+    if (!item.rowCount) return false;
+    const restoring = await client.query('SELECT 1 FROM restoring_attachment_scopes WHERE trash_id = $1', [row.id]);
+    if (restoring.rowCount) return false;
+    await removeTrashFiles(row);
+    await client.query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+    return true;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Retention: NO auto-purge by default (retention_days NULL); when a period
 // is set, the purge is LAZY — it runs when the trash list is opened (spec
@@ -177,11 +192,7 @@ async function purgeExpiredLazily(): Promise<void> {
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
   const rows = await query<TrashRow>('SELECT * FROM trash_items WHERE deleted_at < $1', [cutoff]);
   for (const row of rows) {
-    await removeTrashFiles(row).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error(`[trash] lazy purge: failed to remove ${row.trash_path}:`, err);
-    });
-    await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+    await purgeAvailableRow(row).catch((err) => console.error(`[trash] lazy purge: failed to remove ${row.trash_path}:`, err));
   }
 }
 
@@ -321,6 +332,77 @@ function restoredPathMapper(row: TrashRow, destRel: string): (oldRel: string) =>
   return (oldRel) => (oldRel === orig ? destRel : oldRel.startsWith(from) ? `${to}${oldRel.slice(from.length)}` : undefined);
 }
 
+/** Hold only the restoring subtree until readers can evaluate its prior reference ceilings. */
+async function guardRestoringAttachments(row: TrashRow, space: string, destRel?: string): Promise<void> {
+  let childPrefix: string | null = null;
+  if (destRel !== undefined) {
+    const dir = destRel.slice(0, destRel.lastIndexOf('/') + 1);
+    childPrefix = row.kind === 'folder' ? `${destRel}/` : `${dir}${storage.relPathStem(destRel, row.kind as PageKind)}/`;
+  }
+  await query(
+    `INSERT INTO restoring_attachment_scopes (trash_id, space_slug, root_path, child_prefix) VALUES ($1,$2,$3,$4)
+     ON CONFLICT (trash_id) DO UPDATE SET space_slug = EXCLUDED.space_slug, root_path = EXCLUDED.root_path, child_prefix = EXCLUDED.child_prefix`,
+    [row.id, space, destRel ?? null, childPrefix],
+  );
+}
+
+async function restoreAttachmentPermissions(row: TrashRow, space: string, mapPath: (path: string) => string | undefined): Promise<void> {
+  if (row.legacy_attachment_scope) {
+    await query(
+      `INSERT INTO guest_edited_pages SELECT p.id FROM restoring_attachment_scopes r JOIN pages_index p ON p.space_slug = r.space_slug
+        WHERE r.trash_id = $1 AND (r.root_path IS NULL OR p.path = r.root_path OR starts_with(p.path, r.child_prefix))
+       ON CONFLICT DO NOTHING`, [row.id],
+    );
+  }
+  await storage.restoreAttachmentAccess(space, row.payload?.attachments, mapPath);
+}
+
+/** Record the exact page identities before applying grants. A retry must never bind a saved grant to a namesake. */
+const indexedRestorePages = `(SELECT coalesce(jsonb_object_agg(p.path, p.id), '{}'::jsonb) FROM pages_index p
+  WHERE p.space_slug = r.space_slug AND (r.root_path IS NULL OR p.path = r.root_path OR starts_with(p.path, r.child_prefix)))`;
+
+async function markRestoreIndexed(id: string): Promise<void> {
+  await query(`UPDATE restoring_attachment_scopes r SET indexed_pages = ${indexedRestorePages} WHERE trash_id = $1`, [id]);
+}
+
+async function finishRestore(id: string): Promise<void> {
+  await withTransaction(async (client) => {
+    await client.query('DELETE FROM restoring_attachment_scopes WHERE trash_id = $1', [id]);
+    await client.query('DELETE FROM trash_items WHERE id = $1', [id]);
+  });
+}
+
+/** A process can stop after the files were indexed and before all grants were restored. */
+async function resumeAttachmentRestore(actor: User, row: TrashRow): Promise<TrashRestoreResponse | undefined> {
+  const scope = await queryOne<{ space_slug: string; root_path: string | null }>(
+    'SELECT space_slug, root_path FROM restoring_attachment_scopes WHERE trash_id = $1', [row.id],
+  );
+  if (!scope) return;
+  const space = scope.space_slug;
+  const destRel = scope.root_path ?? '';
+  const result = await withSpaceLock(space, async () => {
+    if (await pathExists(trashAbsPath(row.trash_path))) return;
+    const state = await queryOne<{ matches: boolean | null }>(
+      `SELECT indexed_pages = ${indexedRestorePages} AS matches FROM restoring_attachment_scopes r WHERE trash_id = $1`, [row.id],
+    );
+    if (!state?.matches) throw conflict('restore interrupted before its indexed page identities could be verified; recover the original trash files and retry');
+    const mapPath = row.kind === 'space' ? (rel: string) => rel : restoredPathMapper(row, destRel);
+    await restoreAttachmentPermissions(row, space, mapPath);
+    const pageId = row.kind === 'space' ? space : row.kind === 'folder' ? row.page_id : await storage.getEntryIdByExactPath(space, destRel);
+    if (!pageId) throw notFound('restored page');
+    await finishRestore(row.id);
+    await cleanupEmptyTrashDirs(path.dirname(trashAbsPath(row.trash_path)));
+    const renamed = row.kind === 'space' ? space !== row.space_slug : destRel !== row.orig_path;
+    return { restoredPath: destRel, pageId, space, renamed };
+  });
+  if (!result) return;
+  if (row.kind === 'board') await syncLiveBoardAfterRestore(result.pageId);
+  const author = { name: actor.name, email: actor.email };
+  gitSync.recordEditor(space, author);
+  await gitSync.commitNow(space, `docs: restore ${destRel || space}`, author).catch((err) => console.error('[trash] restore commit failed', err));
+  return result;
+}
+
 async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestoreResponse> {
   const space = row.space_slug;
   if (!(await storage.spaceExists(space))) {
@@ -369,6 +451,7 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
     const restoredAccess = await resolveRestoredAccess(row, space, actor, mapPath);
     const existing = await storage.getEntry(row.page_id);
     await fs.mkdir(path.dirname(destAbs), { recursive: true });
+    await guardRestoringAttachments(row, space, destRel);
     await fs.rename(srcAbs, destAbs);
     if (srcChildDirAbs) {
       const destChildDirAbs = destChildDirAbsFor(destAbs, destRel);
@@ -394,11 +477,12 @@ async function restorePageItem(actor: User, row: TrashRow): Promise<TrashRestore
     // A current namesake can carry the old id, so identify restored access
     // by the mapped destination paths of this item.
     await storage.scanSpace(space, undefined, restoredAccess && { byId: new Map(), byPath: restoredAccess.byPath });
-    await storage.restoreAttachmentAccess(space, row.payload?.attachments, mapPath);
+    await markRestoreIndexed(row.id);
+    await restoreAttachmentPermissions(row, space, mapPath);
     // Backfilled folders can contain pages without having an index page of their own.
     const pageId = row.kind === 'folder' ? row.page_id : await storage.getEntryIdByExactPath(space, destRel);
     if (!pageId) throw notFound('restored page');
-    await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+    await finishRestore(row.id);
     await cleanupEmptyTrashDirs(path.dirname(srcAbs));
     // page_id survives inside the file itself (frontmatter id / board's
     // folio-id comment) or, for a PDF, via the claim above, so old links and
@@ -557,6 +641,7 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
 
   await withSpaceLock(slug, async () => {
     await fs.mkdir(path.dirname(restoreTargetAbs), { recursive: true });
+    await guardRestoringAttachments(row, slug);
     await fs.rename(srcAbs, restoreTargetAbs);
     // The common case (rootPath '') moved the whole repo incl. .git into the
     // trash, so it comes back a repo already; a backfilled/partial layout
@@ -600,8 +685,9 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
     // The members and the visibility are back, so the rules can be checked against them; the paths are relative to the content root and do not change.
     const restoredAccess = await resolveRestoredAccess(row, slug, actor, (oldRel) => oldRel);
     await storage.scanSpace(slug, undefined, restoredAccess);
-    await storage.restoreAttachmentAccess(slug, row.payload?.attachments, (path) => path);
-    await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+    await markRestoreIndexed(row.id);
+    await restoreAttachmentPermissions(row, slug, (path) => path);
+    await finishRestore(row.id);
     await cleanupEmptyTrashDirs(path.dirname(srcAbs));
   });
 
@@ -617,10 +703,10 @@ async function restoreSpaceItem(actor: User, row: TrashRow): Promise<TrashRestor
 
 export async function restoreTrashItem(actor: User, id: string): Promise<TrashRestoreResponse> {
   const row = await requireVisibleRow(actor, id);
-  if (row.kind === 'space') return restoreSpaceItem(actor, row);
+  if (row.kind === 'space') return await resumeAttachmentRestore(actor, row) ?? restoreSpaceItem(actor, row);
   // Asked before the restore: it deletes the record the answer is made from.
   const mayRead = await canReadTrashedTarget(actor, row, new MemberCache());
-  const restored = await restorePageItem(actor, row);
+  const restored = await resumeAttachmentRestore(actor, row) ?? await restorePageItem(actor, row);
   // An admin who was never let into a restricted page may bring it back (it comes back restricted, to the same people), but is not told where it landed: the path is made of the title.
   return mayRead ? restored : { ...restored, restoredPath: '' };
 }
@@ -631,8 +717,7 @@ export async function restoreTrashItem(actor: User, id: string): Promise<TrashRe
 
 export async function purgeTrashItem(actor: User, id: string): Promise<{ ok: true }> {
   const row = await requireVisibleRow(actor, id);
-  await removeTrashFiles(row);
-  await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+  if (!await purgeAvailableRow(row)) throw conflict('trash item is being restored');
   return { ok: true };
 }
 
@@ -641,12 +726,9 @@ export async function emptyTrash(actor: User, space?: string): Promise<{ removed
   const scope = await trashScopeFor(actor);
   const rows = await query<TrashRow>('SELECT * FROM trash_items ORDER BY deleted_at');
   const targets = rows.filter((row) => rowVisible(row, actor, scope) && (!space || row.space_slug === space));
+  let removed = 0;
   for (const row of targets) {
-    await removeTrashFiles(row).catch((err) => {
-      // eslint-disable-next-line no-console
-      console.error(`[trash] empty: failed to remove ${row.trash_path}:`, err);
-    });
-    await query('DELETE FROM trash_items WHERE id = $1', [row.id]);
+    if (await purgeAvailableRow(row)) removed++;
   }
-  return { removed: targets.length };
+  return { removed };
 }

@@ -5621,7 +5621,7 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
   // The `DELETE FROM spaces` below cascades to pages_index and, through it, to every page-access rule of the space.
   const access = await snapshotPageAccess(space, { all: true });
   const ids = await snapshotTrashIds(space, { all: true });
-  const attachments = await snapshotAttachmentAccess(ids);
+  const attachments = await snapshotAttachmentAccess(space);
   return {
     ...(attachments.length ? { attachments } : {}),
     v: 1,
@@ -5649,13 +5649,14 @@ async function buildSpaceSnapshot(space: string): Promise<TrashSpaceSnapshot | n
   };
 }
 
-async function snapshotAttachmentAccess(ids: TrashIdEntry[]): Promise<NonNullable<TrashPagePayload['attachments']>> {
+async function snapshotAttachmentAccess(space: string, pageId?: string, dirPrefix?: string): Promise<NonNullable<TrashPagePayload['attachments']>> {
   const rows = await query<{ path: string; hashes: string[]; guest_files: string[] | null }>(
     `SELECT p.path, ARRAY(SELECT sha256 FROM asset_page_grants a WHERE a.page_id = p.id) AS hashes,
             CASE WHEN g.page_id IS NOT NULL THEN ARRAY(SELECT path FROM guest_readable_files f WHERE f.page_id = p.id) END AS guest_files
        FROM pages_index p LEFT JOIN guest_edited_pages g ON g.page_id = p.id
-      WHERE p.id = ANY($1::text[]) AND (g.page_id IS NOT NULL OR EXISTS (SELECT 1 FROM asset_page_grants a WHERE a.page_id = p.id))`,
-    [ids.map((item) => item.pageId)],
+      WHERE p.space_slug = $1 AND ($2::text IS NULL OR p.id = $2 OR ($3::text IS NOT NULL AND substr(p.path, 1, length($3)) = $3))
+        AND (g.page_id IS NOT NULL OR EXISTS (SELECT 1 FROM asset_page_grants a WHERE a.page_id = p.id))`,
+    [space, pageId ?? null, dirPrefix ?? null],
   );
   return rows.map((row) => ({ path: row.path, hashes: row.hashes, guestFiles: row.guest_files }));
 }
@@ -5677,7 +5678,7 @@ export async function restoreAttachmentAccess(space: string, saved: TrashPagePay
 async function pagePayload(space: string, pageId: string, dirPrefix: string | undefined): Promise<TrashPagePayload | null> {
   const access = await snapshotPageAccess(space, { all: false, pageId, dirPrefix });
   const ids = await snapshotTrashIds(space, { all: false, pageId, dirPrefix });
-  const attachments = await snapshotAttachmentAccess(ids);
+  const attachments = await snapshotAttachmentAccess(space, pageId, dirPrefix);
   if (access.length === 0 && ids.length === 0 && attachments.length === 0) return null;
   return { v: 1, ...(attachments.length ? { attachments } : {}), ...(access.length > 0 ? { access } : {}), ...(ids.length > 0 ? { ids } : {}) };
 }

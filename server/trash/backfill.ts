@@ -263,8 +263,8 @@ export async function backfillTrashFromDisk(rootDir = getTrashRoot()): Promise<{
           // ids from the files themselves.
           const pageId = fields.kind === 'space' ? spaceDir.name : (fields.pageId ?? `trash-${stampDir.name}-${spaceDir.name}`.slice(0, 60));
           const inserted = await query<{ id: string }>(
-            `INSERT INTO trash_items (space_slug, page_id, kind, orig_path, title, deleted_by, deleted_at, trash_path, children_count, payload)
-             VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,NULL)
+            `INSERT INTO trash_items (space_slug, page_id, kind, orig_path, title, deleted_by, deleted_at, trash_path, children_count, payload, legacy_attachment_scope)
+             VALUES ($1,$2,$3,$4,$5,NULL,$6,$7,$8,NULL,true)
              ON CONFLICT (trash_path) DO NOTHING
              RETURNING id`,
             [spaceDir.name, pageId, fields.kind, target.relInside, fields.title, deletedAt, trashPath, fields.childrenCount],

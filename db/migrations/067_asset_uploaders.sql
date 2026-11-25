@@ -29,3 +29,19 @@ CREATE TABLE guest_readable_files (
 );
 -- Earlier edit links have no record of the references approved when issued.
 INSERT INTO guest_edited_pages SELECT DISTINCT page_id FROM share_links WHERE mode = 'edit';
+
+-- Trash made before grants were captured (including later discovered old files)
+-- has no reliable record of which links an authenticated editor approved.
+ALTER TABLE trash_items ADD COLUMN legacy_attachment_scope boolean NOT NULL DEFAULT true;
+ALTER TABLE trash_items ALTER COLUMN legacy_attachment_scope SET DEFAULT false;
+
+-- The file scanner can publish an index row before a restore has finished.
+-- Pin the destination subtree until all its original attachment grants are back.
+CREATE TABLE restoring_attachment_scopes (
+  trash_id uuid PRIMARY KEY REFERENCES trash_items(id) ON DELETE RESTRICT,
+  space_slug text NOT NULL,
+  root_path text,
+  child_prefix text,
+  indexed_pages jsonb
+);
+CREATE INDEX restoring_attachment_scopes_space_idx ON restoring_attachment_scopes(space_slug);

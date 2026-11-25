@@ -38,9 +38,14 @@ async function mayReadRaw(user: User, sha: string, pageId?: string): Promise<boo
 }
 
 /** An authenticated editor can deliberately reuse an upload they can already read. Guest saves never call this. */
-export async function bindSubmittedAssets(user: User, pageId: string, markdown: string, fields: unknown[] = []): Promise<void> {
+export async function bindSubmittedAssets(
+  user: User, pageId: string, markdown: string, fields: unknown[] = [], previousMarkdown = '', previousFields: unknown[] = [],
+): Promise<void> {
   const hashes = await markdownAssetHashes(markdown, fields);
+  if (!hashes.size) return;
+  const existing = await markdownAssetHashes(previousMarkdown, previousFields);
   for (const sha of hashes) {
+    if (existing.has(sha)) continue;
     if (await mayReadRaw(user, sha)) await query(
       `WITH bound AS (INSERT INTO asset_page_grants (sha256, page_id) VALUES ($1, $2) ON CONFLICT DO NOTHING)
        DELETE FROM asset_uploaders WHERE sha256 = $1 AND user_id = $3`, [sha, pageId, user.id],

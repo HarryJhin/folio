@@ -258,6 +258,15 @@ describe('GET /a/:sha/:filename — what an uploaded file is served as (F-04)', 
     const guestUrl = `/api/share/${editable.url.split('/').at(-1)}/pages/${other.id}/assets/${sha256}/report.txt`;
     expect((await app.inject({ url: guestUrl })).statusCode).toBe(404);
     expect((await app.inject({ url: published(other.id) })).statusCode).toBe(404);
+    const signedSave = (markdown: string) => app.inject({
+      method: 'PUT', url: `/api/pages/${other.id}`, headers: { cookie: editorCookie }, payload: { markdown },
+    });
+    const link = `[Pasted link](/a/${sha256}/report.txt)`;
+    expect((await signedSave(`${link}\nSigned correction to the text.`)).statusCode).toBe(200);
+    expect((await app.inject({ url: guestUrl })).statusCode).toBe(404);
+    expect((await signedSave('No attachment.')).statusCode).toBe(200);
+    expect((await signedSave(link)).statusCode).toBe(200);
+    expect((await app.inject({ url: guestUrl })).body).toBe('published attachment');
     await storage.writeDocBody(page.id, '# Report removed');
     expect((await app.inject({ url: published(page.id) })).statusCode).toBe(404);
     await storage.writeDocBody(page.id, `[Report](/a/${sha256}/report.txt)`);

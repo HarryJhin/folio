@@ -247,7 +247,10 @@ export async function initialGuestFileReferences(pageId: string): Promise<string
 async function canGrantFile(pageIds: ReadonlySet<string>, relPath: string): Promise<Set<string>> {
   const limited = await query<{ page_id: string }>(
     `SELECT page_id FROM guest_edited_pages g WHERE page_id = ANY($1::text[])
-      AND NOT EXISTS (SELECT 1 FROM guest_readable_files f WHERE f.page_id = g.page_id AND f.path = $2)`,
+      AND NOT EXISTS (SELECT 1 FROM guest_readable_files f WHERE f.page_id = g.page_id AND f.path = $2)
+      UNION
+     SELECT p.id FROM pages_index p JOIN restoring_attachment_scopes r ON r.space_slug = p.space_slug
+      WHERE p.id = ANY($1::text[]) AND (r.root_path IS NULL OR p.path = r.root_path OR starts_with(p.path, r.child_prefix))`,
     [[...pageIds], relPath],
   );
   const eligible = new Set(pageIds);
