@@ -11,7 +11,7 @@ import { initAnalytics } from '../../analytics';
 import { reconcileLanguageFromProfile } from '../../i18n';
 import { resolveSpaceRole } from './roles';
 import { SetupScreen } from './SetupScreen';
-import { LoginScreen } from './LoginScreen';
+import { LoginScreen, rememberAutoSsoAttempt } from './LoginScreen';
 import { publicHomeUrl, publicPageUrl, publicSiteInfoKey, publicUrlForAppPath } from '../public/publicSite';
 import '../i18n/register';
 
@@ -115,7 +115,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   // only actually re-fires across an actual login/logout, not every render.
   const userId = data?.user?.id;
   useEffect(() => {
-    if (userId) void queryClient.prefetchQuery({ queryKey: STARS_QUERY_KEY, queryFn: api.getStars });
+    if (userId) {
+      rememberAutoSsoAttempt(null);
+      void queryClient.prefetchQuery({ queryKey: STARS_QUERY_KEY, queryFn: api.getStars });
+    }
   }, [userId, queryClient]);
 
   const logoutMutation = useMutation({
@@ -125,6 +128,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Wipe every cached page/tree/stars/etc so a different user logging
       // in on the same browser never sees a flash of the previous session's
       // data; then re-fetch auth state to drop to the login screen.
+      if (data?.autoSsoProvider) rememberAutoSsoAttempt(data.autoSsoProvider);
       queryClient.clear();
       void refetch();
     },
@@ -150,7 +154,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   if (!data.user) {
-    return <GuestGate onDone={() => refetch()} google={data.google} ssoProviders={data.ssoProviders} demo={data.demo} />;
+    return <GuestGate onDone={() => refetch()} google={data.google} ssoProviders={data.ssoProviders} autoSsoProvider={data.autoSsoProvider} demo={data.demo} />;
   }
 
   const value: AuthContextValue = {

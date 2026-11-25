@@ -41,11 +41,13 @@ async function toAuthState(user: User): Promise<AuthState> {
 }
 
 /** Capabilities shared by the initial auth state, sign-in and invitation responses. */
-export async function instanceAuthCapabilities(): Promise<Pick<AuthState, 'google' | 'ssoProviders' | 'assistantDisabled'>> {
+export async function instanceAuthCapabilities(): Promise<Pick<AuthState, 'google' | 'ssoProviders' | 'autoSsoProvider' | 'assistantDisabled'>> {
   const list = await publicProviders();
+  const autoProvider = list.find((provider) => provider.slug === process.env.FOLIO_AUTO_SSO_PROVIDER?.trim());
   return {
     google: list.some((p) => p.slug === 'google'),
     ...(list.length > 0 ? { ssoProviders: list } : {}),
+    ...(autoProvider ? { autoSsoProvider: autoProvider.slug } : {}),
     ...(assistantDisabled() ? { assistantDisabled: true } : {}),
   };
 }
