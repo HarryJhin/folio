@@ -4,16 +4,16 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import * as fastifyCookieModule from '@fastify/cookie';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { setUpTestSchema } from '../db/testSchema.js';
-import { query } from '../db/pool.js';
+import { getPool, query } from '../db/pool.js';
 import { HttpError } from '../errors.js';
-import { liveConnectionCount, trackConnection } from '../liveConnections.js';
+import { extendSessionConnections, liveConnectionCount, trackConnection, trackSessionSocket } from '../liveConnections.js';
 import * as oauthStore from '../oauth/store.js';
 import { registerAuditRoutes } from '../auditRoutes.js';
 import { AUDIT_CSV_HEADER, auditCsvChunks, csvCell, listAuditEvents } from '../auditLog.js';
 import { recordAudit } from '../audit.js';
-import { registerProtectedAuthRoutes } from './routes.js';
+import { registerPublicAuthRoutes, registerProtectedAuthRoutes } from './routes.js';
 import { registerSessionRoutes } from './sessionRoutes.js';
 import * as session from './session.js';
 import * as store from './store.js';
@@ -68,6 +68,7 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
       return reply.status(500).send({ error: String(err) });
     });
     await app.register(fastifyCookie);
+    registerPublicAuthRoutes(app);
     await app.register(async (scope) => {
       scope.addHook('onRequest', session.requireSession);
       registerProtectedAuthRoutes(scope);
@@ -138,6 +139,151 @@ describe('stage 4: deactivation, sessions, audit log (real PG)', () => {
       await new Promise((r) => setTimeout(r, 100));
       const rows = await query('SELECT 1 FROM audit_log WHERE action = $1 AND target = $2', ['user.disable', u.id]);
       expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('activity-managed browser sessions', () => {
+    const day = 86_400_000;
+    const signal = (token: string, origin = 'http://localhost') => app.inject({
+      method: 'POST', url: '/api/me/session/activity',
+      headers: { cookie: `folio_session=${token}`, origin },
+    });
+    const state = async (token: string) => (await app.inject({
+      method: 'GET', url: '/api/auth/state', headers: { cookie: `folio_session=${token}` },
+    })).json();
+
+    it('uses the earlier of the idle deadline and verified authentication plus 30 days', async () => {
+      const user = await newUser('activity-deadlines');
+      const now = Date.now();
+      const fresh = await store.createSession(user.id, {}, new Date(now));
+      expect(Date.parse(fresh.expiresAt) - now).toBeGreaterThanOrEqual(14 * day);
+      expect(Date.parse(fresh.expiresAt) - now).toBeLessThan(14 * day + 2000);
+      const recent = await store.createSession(user.id, {}, new Date(now - 29 * day));
+      expect(Date.parse(recent.expiresAt)).toBe(now + day);
+      expect((await state(recent.token)).activitySessionExpiresAt).toBe(recent.expiresAt);
+      await expect(store.createSession(user.id, {}, new Date(now - 30 * day))).rejects.toThrow();
+    });
+
+    it('renews only explicit same-origin activity, keeping two tabs on one deadline and cookie', async () => {
+      const user = await newUser('activity-renewal');
+      const { token } = await store.createSession(user.id, {}, new Date(Date.now() - 10 * day));
+      const [prior] = await query<{ expires_at: Date }>(
+        `UPDATE sessions SET browser_active_at = now() - interval '10 days', expires_at = now() + interval '4 days'
+          WHERE user_id = $1 RETURNING expires_at`, [user.id],
+      );
+      expect((await state(token)).activitySessionExpiresAt).toBe(prior.expires_at.toISOString());
+      expect((await signal(token, 'https://other.example')).statusCode).toBe(403);
+      expect((await signal(token, '')).statusCode).toBe(403);
+      expect((await state(token)).activitySessionExpiresAt).toBe(prior.expires_at.toISOString());
+      const responses = await Promise.all([signal(token), signal(token)]);
+      for (const res of responses) {
+        expect(res.statusCode).toBe(200);
+        expect(res.json().expiresAt).toBe(responses[0].json().expiresAt);
+        const deadline = Date.parse(res.json().expiresAt);
+        expect(deadline - Date.now()).toBeGreaterThan(14 * day - 3000);
+        expect(deadline - Date.now()).toBeLessThanOrEqual(14 * day);
+        expect(res.cookies[0].value).toBe(token);
+        expect(res.cookies[0].expires?.getTime()).toBe(Math.floor(deadline / 1000) * 1000);
+      }
+      expect((await state(token)).activitySessionExpiresAt).toBe(responses[0].json().expiresAt);
+    });
+
+    it('preserves ordinary cookie lifetimes and denies PAT-only renewal', async () => {
+      const user = await newUser('activity-ordinary');
+      const { token } = await store.createSession(user.id);
+      expect((await state(token)).activitySessionExpiresAt).toBeUndefined();
+      const ordinary = await signal(token);
+      expect(ordinary.statusCode).toBe(204);
+      expect(ordinary.cookies).toHaveLength(0);
+      const pat = await store.createApiToken(user.id, 'activity-test', ['read', 'write']);
+      expect((await app.inject({ method: 'POST', url: '/api/me/session/activity',
+        headers: { authorization: `Bearer ${pat.token}`, origin: 'http://localhost' } })).statusCode).toBe(403);
+    });
+
+    it('rejects expired and revoked sessions without reissuing cookies', async () => {
+      const user = await newUser('activity-expired');
+      const { token } = await store.createSession(user.id, {}, new Date());
+      await query("UPDATE sessions SET expires_at = now() WHERE user_id = $1", [user.id]);
+      expect((await signal(token)).statusCode).toBe(401);
+      const replacement = await store.createSession(user.id, {}, new Date());
+      await store.destroySession(replacement.token);
+      expect((await signal(replacement.token)).statusCode).toBe(401);
+    });
+
+    it('extends after 12 hours and stops at the hard limit even with activity on day 29', async () => {
+      const user = await newUser('activity-boundaries');
+      for (const elapsed of [12 / 24, 29]) {
+        const authTime = new Date(Date.now() - elapsed * day);
+        const { token } = await store.createSession(user.id, {}, authTime);
+        await query(
+          `UPDATE sessions SET browser_active_at = browser_authenticated_at,
+             expires_at = LEAST(browser_authenticated_at + interval '720 hours', now() + interval '12 hours')
+           WHERE user_id = $1`, [user.id],
+        );
+        const res = await signal(token);
+        expect(res.statusCode).toBe(200);
+        const deadline = Date.parse(res.json().expiresAt);
+        if (elapsed === 29) expect(deadline).toBe(authTime.getTime() + 30 * day);
+        else expect(Math.abs(deadline - Date.now() - 14 * day)).toBeLessThan(2000);
+        await store.destroySession(token);
+      }
+    });
+
+    it('cannot renew when the session expires while the activity request waits for the row lock', async () => {
+      const user = await newUser('activity-waits');
+      const { token } = await store.createSession(user.id, {}, new Date());
+      const locker = await getPool().connect();
+      try {
+        await locker.query('BEGIN');
+        await locker.query(
+          `UPDATE sessions SET expires_at = clock_timestamp() + interval '75 milliseconds',
+            browser_active_at = clock_timestamp() - interval '1 hour' WHERE user_id = $1`, [user.id],
+        );
+        const pending = store.recordBrowserActivity(token);
+        await locker.query('SELECT pg_sleep(0.15)');
+        await locker.query('COMMIT');
+        expect(await pending).toBeUndefined();
+      } finally {
+        await locker.query('ROLLBACK');
+        locker.release();
+      }
+    });
+
+    it('rejects inbound and outbound frames on an expired socket even before its timer gets CPU time', () => {
+      const delivered = vi.fn();
+      const socket = Object.assign(new FakeSocket(), { send: delivered, emit: vi.fn((_event: string, ..._args: unknown[]) => true) });
+      vi.useFakeTimers();
+      try {
+        const deadline = Date.now() + 1000;
+        trackSessionSocket('user', 'test-token', socket, new Date(deadline).toISOString());
+        socket.send('permitted');
+        vi.setSystemTime(deadline);
+        expect(socket.emit('message', 'late')).toBe(false);
+        socket.send('private');
+        expect(delivered).toHaveBeenCalledTimes(1);
+        expect(socket.closed?.code).toBe(4401);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ends open sockets at the renewed deadline and ignores late, older deadlines', async () => {
+      const user = await newUser('activity-socket');
+      const { token } = await store.createSession(user.id, {}, new Date());
+      const socket = new FakeSocket();
+      vi.useFakeTimers();
+      try {
+        const now = Date.now();
+        trackConnection(user.id, token, socket, new Date(now + 1000).toISOString());
+        extendSessionConnections(token, new Date(now + 2000).toISOString());
+        extendSessionConnections(token, new Date(now + 1500).toISOString());
+        vi.advanceTimersByTime(1999);
+        expect(socket.closed).toBeNull();
+        vi.advanceTimersByTime(1);
+        expect(socket.closed?.code).toBe(4401);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 

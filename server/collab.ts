@@ -48,7 +48,7 @@ import { duplicateRowReplacements, isOverHardRowLimit, isTableParseError, parseT
 import { decodeScenePayload, extractScenePayload, renderSceneSvg } from './confluenceWhiteboard.js';
 import { orderBoardElements, placeBoundTexts, withBoardIndexes } from './boardOrder.js';
 import type { ExcalidrawElement, ExcalidrawScene } from './confluenceWhiteboard.js';
-import { trackConnection } from './liveConnections.js';
+import { trackSessionSocket } from './liveConnections.js';
 
 interface PersistenceHooks {
   bindState: (docName: string, doc: Y.Doc) => Promise<void> | void;
@@ -3307,7 +3307,7 @@ export function attachToServer(httpServer: HttpServer): void {
       // Raw upgrade request: never passes through Fastify/@fastify/cookie, so the
       // session cookie is parsed by hand here (session.parseCookieHeader).
       //
-      // Deliberately session.userForToken (cookie-hash lookup only), NOT
+      // Deliberately session.authForSessionToken (cookie-hash lookup only), NOT
       // session.resolveAuth/userForRequest — round 7's PAT Bearer support is
       // intentionally NOT wired in here. DEV-PLAN round 7: "WS /collab does
       // NOT accept a PAT (cookie-only)". A PAT is meant for scripted/MCP callers making
@@ -3316,7 +3316,9 @@ export function attachToServer(httpServer: HttpServer): void {
       // session is a browser-only concept with no equivalent "scope" story for
       // an open-ended real-time stream, so it stays cookie-only.
       const cookies = session.parseCookieHeader(req.headers.cookie);
-      const user = await session.userForToken(cookies[session.SESSION_COOKIE_NAME]);
+      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
+      const auth = await session.authForSessionToken(sessionToken);
+      const user = auth?.user;
 
       let role: Awaited<ReturnType<typeof session.effectiveRole>>;
       let guestIdentity: { name: string; email: string } | undefined;
@@ -3418,9 +3420,17 @@ export function attachToServer(httpServer: HttpServer): void {
         return;
       }
 
-      const sessionToken = cookies[session.SESSION_COOKIE_NAME];
+      // Seeding may take time. Pick up a renewal or revocation committed while preparing the document.
+      let expiresAt = auth?.activitySessionExpiresAt;
+      if (sessionAuthorized && expiresAt) {
+        expiresAt = (await session.authForSessionToken(sessionToken))?.activitySessionExpiresAt;
+        if (!expiresAt) {
+          rejectUpgrade(socket, 401, 'Unauthorized');
+          return;
+        }
+      }
       wss.handleUpgrade(req, socket, head, (conn) => {
-        if (sessionAuthorized && user && sessionToken) trackConnection(user.id, sessionToken, conn);
+        if (sessionAuthorized && user && sessionToken && !trackSessionSocket(user.id, sessionToken, conn, expiresAt)) return;
         if (publicVisitor) makeSilentViewer(conn);
         else if (role === 'viewer') makeReadOnly(conn);
         setupWSConnection(conn, req, { docName });

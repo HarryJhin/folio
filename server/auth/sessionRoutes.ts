@@ -7,6 +7,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SessionInfo } from '../../shared/contracts.js';
+import { publicUrlOrOrigin } from '../publicUrl.js';
 import { HttpError } from '../errors.js';
 import { recordAudit } from '../audit.js';
 import { assertNotDemo, assertNotDemoAccount } from '../demo.js';
@@ -29,6 +30,18 @@ function adminGuard(request: FastifyRequest): void {
 
 export function registerSessionRoutes(app: FastifyInstance): void {
   // --- Own sessions --------------------------------------------------------
+
+  app.post('/api/me/session/activity', async (request, reply) => {
+    session.requireCookieAuth(request);
+    const expected = publicUrlOrOrigin(`${request.protocol}://${request.host}`);
+    if (request.headers.origin !== new URL(expected).origin) throw new HttpError(403, 'same-origin activity required');
+    const token = request.cookies[session.SESSION_COOKIE_NAME]!;
+    const expiresAt = await store.recordBrowserActivity(token);
+    if (expiresAt === undefined) throw new HttpError(401, 'authentication required');
+    if (expiresAt === null) return reply.code(204).send();
+    session.setSessionCookie(reply, token, expiresAt);
+    return { expiresAt };
+  });
 
   app.get('/api/me/sessions', async (request): Promise<{ sessions: SessionInfo[] }> => {
     session.requireCookieAuth(request);
