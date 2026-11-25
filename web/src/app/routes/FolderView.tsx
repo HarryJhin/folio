@@ -1,3 +1,4 @@
+import { folioLinkNavPath } from '../../markdown/folioLinks';
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -5,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { ClipboardList, FileText, FileType2, Folder, LayoutDashboard, Presentation, Sheet, Table2, Waypoints, Database, AppWindow } from 'lucide-react';
 import { officeFormat, type TreeNode } from '@shared/contracts';
 import { api, ApiError } from '../api';
-import { useDocumentTitle } from '../hooks';
+import { useActiveFolderPath, useDocumentTitle } from '../hooks';
 import { useSetHeaderInfo } from '../Shell';
 import { findNodeByPath, treeNodeDisplayTitles } from '../sidebar/treeUtils';
 import { NotFound } from './NotFound';
@@ -71,7 +72,7 @@ export function FolderListing({ space, title, entries }: { space: string; title:
                           : officeFmt === 'pptx'
                             ? Presentation
                             : FileText;
-            const to = child.kind === 'folder' ? `/s/${space}/d/${child.path}` : `/s/${space}/p/${child.id}`;
+            const to = child.kind === 'folder' ? folioLinkNavPath({ kind: 'dir', space, path: child.path }) : `/s/${space}/p/${child.id}`;
             return (
               <li key={child.id}>
                 <button
@@ -102,8 +103,7 @@ export function FolderListing({ space, title, entries }: { space: string; title:
 export function FolderView() {
   const { t } = useTranslation('app');
   const { space = '' } = useParams<{ space: string }>();
-  const params = useParams();
-  const path = params['*'] ?? '';
+  const path = useActiveFolderPath() ?? '';
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['tree', space],

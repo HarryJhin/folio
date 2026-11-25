@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { RefObject } from 'react';
 import { matchPath, useLocation } from 'react-router';
+import { parseFolioLink } from '../markdown/folioLinks';
 
 function readLocalStorage<T>(key: string, initial: T): T {
   try {
@@ -110,7 +111,8 @@ export function useActivePageId(): string | undefined {
  */
 export function useActiveFolderPath(): string | undefined {
   const { pathname } = useLocation();
-  return matchPath('/s/:space/d/*', pathname)?.params['*'];
+  const ref = parseFolioLink(pathname, undefined);
+  return ref?.kind === 'dir' ? ref.path : undefined;
 }
 
 /**

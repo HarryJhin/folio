@@ -6,6 +6,8 @@ update rather than appended to, so there is no history to dig through.
 
 Version: **0.4.5**.
 
+The sidebar and folder listing read the same decoded repository path from folder URLs. Use `folioLinkNavPath` to link to a directory so each filename is encoded exactly once.
+
 The share header displays the Folio mark, page title and access mode. The product introduction card has been removed.
 
 The document reader and offline PWA reader register `remark-cjk-friendly/parseOnly` alongside GFM. Both recognize emphasis boundaries next to CJK text. The live editor uses a separate CodeMirror grammar.
