@@ -123,15 +123,13 @@ describe('SharedPageView file readers', () => {
 });
 
 describe('SharedPageView — product mark', () => {
-  it('offers a "What is Folio?" badge with the tagline and a followable link to the product site', async () => {
+  it('shows the Folio mark without the product introduction', async () => {
     stubFetchByUrl({ '/api/share/t1': docPayload({}) });
     renderShare('/share/t1');
     await waitFor(() => expect(screen.getByTestId('markdown-body')).toBeTruthy());
-    expect(screen.getByRole('link', { name: 'What is Folio?' })).toBeTruthy();
-    expect(screen.getByText('AI-friendly wiki for modern teams')).toBeTruthy();
-    const site = screen.getByRole('link', { name: 'foliowiki.online' });
-    expect(site.getAttribute('href')).toBe('https://foliowiki.online');
-    expect(site.getAttribute('rel') ?? '').not.toContain('nofollow');
+    expect(screen.getByRole('link', { name: 'Folio' }).getAttribute('href')).toBe('https://foliowiki.online');
+    expect(screen.queryByText('What is Folio?')).toBeNull();
+    expect(screen.queryByText('AI-friendly wiki for modern teams')).toBeNull();
   });
 });
 
