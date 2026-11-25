@@ -13,7 +13,7 @@ import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import * as fastifyCookieModule from '@fastify/cookie';
 import { SignJWT, exportJWK, generateKeyPair, type CryptoKey, type JWK } from 'jose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setUpTestSchema, deleteTestSpace } from '../db/testSchema.js';
 import { query, queryOne } from '../db/pool.js';
 import { HttpError } from '../errors.js';
@@ -235,6 +235,74 @@ describe('single sign-on through OpenID Connect (mock provider, real PG)', () =>
   }
 
   // -------------------------------------------------------------------------
+
+  it('requests recent authentication and renews the front proxy after a verified passkey sign-in', async () => {
+    const p = await provider();
+    vi.stubEnv('FOLIO_ACTIVITY_SESSION_PROVIDER', p.slug);
+    vi.stubEnv('FOLIO_SESSION_PROXY_PREFIX', '/edge');
+    try {
+      const start = await app.inject({ method: 'GET', url: `/api/auth/oidc/${p.slug}/start` });
+      const authorize = new URL(String(start.headers.location));
+      expect(authorize.searchParams.get('max_age')).toBe('120');
+      const target = '/s/team/p/notes?view=history#editor';
+      const authenticatedAt = Math.floor(Date.now() / 1000) - 10;
+      const { sessionCookie, res } = await signIn(p.slug, {
+        claims: { email: 'recent@acme.test', amr: ['phr'], auth_time: authenticatedAt },
+        startUrl: `/api/auth/oidc/${p.slug}/start?returnTo=${encodeURIComponent(target)}`,
+      });
+      expect(sessionCookie).toBeTruthy();
+      const handoff = new URL(String(res.headers.location));
+      expect(handoff.pathname).toBe('/edge/start');
+      expect(handoff.searchParams.get('rd')).toBe(target);
+      const state = await app.inject({ method: 'GET', url: '/api/auth/state', headers: { cookie: sessionCookie! } });
+      const owner = state.json().user;
+      const stored = await queryOne<{ authenticated_at: string; active_at: string; expires_at: string }>(
+        'SELECT browser_authenticated_at AS authenticated_at, browser_active_at AS active_at, expires_at FROM sessions WHERE user_id = $1',
+        [owner.id],
+      );
+      expect(new Date(stored!.authenticated_at).getTime()).toBe(authenticatedAt * 1000);
+      expect(Date.parse(state.json().activitySessionExpiresAt)).toBe(new Date(stored!.expires_at).getTime());
+      expect(new Date(stored!.expires_at).getTime() - new Date(stored!.active_at).getTime()).toBe(14 * 86400000);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('keeps the usual sign-in and fixed session for another provider on the same instance', async () => {
+    const p = await provider();
+    vi.stubEnv('FOLIO_ACTIVITY_SESSION_PROVIDER', 'another-provider');
+    vi.stubEnv('FOLIO_SESSION_PROXY_PREFIX', '/edge');
+    try {
+      const start = await app.inject({ method: 'GET', url: `/api/auth/oidc/${p.slug}/start` });
+      expect(new URL(String(start.headers.location)).searchParams.has('max_age')).toBe(false);
+      const { sessionCookie, res } = await signIn(p.slug, { claims: { email: 'ordinary@acme.test' } });
+      expect(sessionCookie).toBeTruthy();
+      expect(new URL(String(res.headers.location)).pathname).toBe('/');
+      const state = await app.inject({ method: 'GET', url: '/api/auth/state', headers: { cookie: sessionCookie! } });
+      expect(state.json().activitySessionExpiresAt).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each(['missing time', 'old time', 'future time', 'other method', 'missing method'] as const)(
+    'requires signed recent passkey evidence for the configured provider: %s', async (sample) => {
+      const p = await provider();
+      vi.stubEnv('FOLIO_ACTIVITY_SESSION_PROVIDER', p.slug);
+      const now = Math.floor(Date.now() / 1000);
+      try {
+        const { authError, sessionCookie } = await signIn(p.slug, { claims: {
+          email: 'policy@acme.test',
+          ...(sample !== 'missing time' ? { auth_time: now + (sample === 'old time' ? -600 : sample === 'future time' ? 600 : 0) } : {}),
+          ...(sample === 'missing method' ? {} : { amr: sample === 'other method' ? ['otp'] : ['phr'] }),
+        } });
+        expect(authError).toBe('exchange');
+        expect(sessionCookie).toBeUndefined();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it('adds openid once when reading a provider with older scopes', async () => {
     const p = await provider();
