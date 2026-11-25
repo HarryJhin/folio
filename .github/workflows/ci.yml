@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, custom]
   pull_request:
 
 permissions:
@@ -23,4 +23,13 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
+      - run: npm test -- --run web/src/app/auth/LoginScreen.sso.test.tsx
       - run: npm run build
+
+  publish-custom:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/custom'
+    needs: check
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-image.yml

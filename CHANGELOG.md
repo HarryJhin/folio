@@ -4,6 +4,8 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 
 ## [Unreleased]
 
+- Successful CI on the custom branch publishes a native ARM64 image to the fork owner's GHCR namespace.
+
 - Spaces open in the graph by default. Space admins can choose Space home as the first view in Space settings.
 
 - Conditional Markdown saves through REST and MCP report revision conflicts. Page history follows renames, and trash restores preserve compound file types and identifiers on name conflicts.
