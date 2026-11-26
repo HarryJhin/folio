@@ -2,6 +2,8 @@
 
 Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.org/).
 
+For changes integrated into the `custom` branch, see the [fork changelog](CHANGELOG-CUSTOM.md).
+
 ## [Unreleased]
 
 - Shared and published HTML artifacts now recheck access to each bundle file. Visitors can submit directly shared forms that accept anonymous responses.
