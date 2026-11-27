@@ -121,7 +121,7 @@ also get a "Templates" section in the sidebar (collapsed, with a count) whose
 one; an open template is marked "Template" in the breadcrumbs. The folder is
 hidden from the page tree, graph, tags, bases and public sites (search still
 finds it). A new empty space starts with Meeting notes, How-to and Decision
-record in the creator's language (English or Ukrainian); a space cloned from Git
+record in the creator's language (Korean, English or Ukrainian); a space cloned from Git
 gets none. Limits: `{{title}}` is filled only in documents (not tables or
 forms); templates need a connection (offline mode does not cover them); two
 templates with the same title show their file names in the tree. Copies are
@@ -1111,8 +1111,7 @@ See [INSTALL](INSTALL.md).
   reports an @mention in a comment and a reply in a thread you took part in
   (only to people who can see the page; an agent's comment through MCP counts),
   and an overdue page review (see below). There is no email.
-- **Interface languages**: English and Ukrainian; a new language is a set
-  of bundle files. Content is not translated — it is data.
+- **Interface languages**: Korean, English and Ukrainian. Saved language preferences take priority, followed by supported browser languages. Korean is the fallback. Dates follow the interface language; timestamps use the viewer's time zone.
 - **Theme**: light, dark, system.
 - **Mobile**: responsive layout, a separate mobile mode for tables. There is
   no separate app.

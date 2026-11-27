@@ -25,7 +25,7 @@ import { DEMO_OAUTH_PER_MINUTE } from '../demoLimits.js';
 import { notFound } from '../errors.js';
 import { ClientMetadataError, fetchClientMetadata, isMetadataClientId } from './cimd.js';
 import { exchangeAuthorizationCode } from './exchange.js';
-import { CONSENT_HEADERS, pickLang, renderConsentPage, renderErrorPage } from './consentPage.js';
+import { CONSENT_HEADERS, pickLang, renderConsentPage, renderErrorPage, type OAuthErrorKey } from './consentPage.js';
 import * as store from './store.js';
 import {
   MAX_REDIRECT_URIS,
@@ -138,8 +138,9 @@ function oauthError(reply: FastifyReply, status: number, error: string, descript
   return reply.status(status).send({ error, error_description: description });
 }
 
-function htmlError(reply: FastifyReply, status: number, message: string, lang: ReturnType<typeof pickLang> = 'en'): FastifyReply {
-  return reply.status(status).headers(CONSENT_HEADERS).send(renderErrorPage(lang, message));
+function htmlError(reply: FastifyReply, status: number, key: OAuthErrorKey, userLang?: string | null, diagnostic?: string): FastifyReply {
+  const lang = pickLang(userLang, reply.request.headers['accept-language']);
+  return reply.status(status).headers(CONSENT_HEADERS).send(renderErrorPage(lang, key, diagnostic));
 }
 
 function redirectToClient(reply: FastifyReply, redirectUri: string, issuer: string, params: Record<string, string | null | undefined>): FastifyReply {
@@ -246,26 +247,28 @@ export async function registerOAuthRoutes(app: FastifyInstance, opts: OAuthRoute
 
     // --- Authorization endpoint -------------------------------------------
     oauth.get('/oauth/authorize', async (request, reply) => {
-      if (rateLimited('authorize', request.ip, 60, 60 * 1000)) return htmlError(reply, 429, 'Too many requests. Try again in a minute.');
+      if (rateLimited('authorize', request.ip, 60, 60 * 1000)) return htmlError(reply, 429, 'error.rateLimited');
       const q = asParams(request.query);
       const issuer = issuerFor(request);
 
       // 1. Client and redirect_uri: until both are trusted, errors are shown here and never redirected.
-      if (!q.client_id) return htmlError(reply, 400, 'The request is missing client_id.');
+      if (!q.client_id) return htmlError(reply, 400, 'error.missingClientId');
       let client: store.OAuthClient;
       try {
         client = await resolveClient(q.client_id);
       } catch (err) {
-        const reason = err instanceof ClientMetadataError ? err.message : 'unknown client_id';
-        return htmlError(reply, 400, `This app could not be identified: ${reason}.`);
+        if (err instanceof ClientMetadataError && err.message !== 'unknown client_id') {
+          return htmlError(reply, 400, 'error.clientMetadata', undefined, err.message);
+        }
+        return htmlError(reply, 400, 'error.unknownClient');
       }
       let redirectUri = q.redirect_uri;
       if (!redirectUri) {
-        if (client.redirectUris.length !== 1) return htmlError(reply, 400, 'The request is missing redirect_uri.');
+        if (client.redirectUris.length !== 1) return htmlError(reply, 400, 'error.missingRedirect');
         redirectUri = client.redirectUris[0];
       }
       if (!redirectUriMatches(client.redirectUris, redirectUri)) {
-        return htmlError(reply, 400, 'The redirect_uri does not match what this app registered.');
+        return htmlError(reply, 400, 'error.redirectMismatch');
       }
       const trustedRedirect = redirectUri;
 
@@ -300,7 +303,7 @@ export async function registerOAuthRoutes(app: FastifyInstance, opts: OAuthRoute
       captureServerEvent('oauth_connect_started', request.cookies?.[session.SESSION_COOKIE_NAME], { client_name: clientNameProp(client.clientName) });
       return reply.status(200).headers(CONSENT_HEADERS).send(
         renderConsentPage({
-          lang: pickLang(user.lang),
+          lang: pickLang(user.lang, request.headers['accept-language']),
           clientName: client.clientName,
           clientSource: client.source,
           clientIdHost: client.source === 'cimd' ? redirectHost(client.clientId) : '',
@@ -314,14 +317,14 @@ export async function registerOAuthRoutes(app: FastifyInstance, opts: OAuthRoute
 
     // --- Consent decision (CSRF-protected by the single-use request id) -----
     oauth.post('/oauth/authorize', async (request, reply) => {
-      if (demoOAuthLimited('authorize-post', request.ip)) return htmlError(reply.header('Retry-After', '60'), 429, 'Too many requests. Try again in a minute.');
-      if (rateLimited('authorize', request.ip, 60, 60 * 1000)) return htmlError(reply, 429, 'Too many requests. Try again in a minute.');
+      if (demoOAuthLimited('authorize-post', request.ip)) return htmlError(reply.header('Retry-After', '60'), 429, 'error.rateLimited');
+      if (rateLimited('authorize', request.ip, 60, 60 * 1000)) return htmlError(reply, 429, 'error.rateLimited');
       const body = asParams(request.body);
       const user = await cookieUser(request);
-      if (!user) return htmlError(reply, 401, 'Your Folio session has ended. Sign in and start the connection again.');
-      if (!body.request_id) return htmlError(reply, 400, 'This authorization request is not valid.', pickLang(user.lang));
+      if (!user) return htmlError(reply, 401, 'error.sessionEnded');
+      if (!body.request_id) return htmlError(reply, 400, 'error.invalidRequest', user.lang);
       const pending = await store.consumeAuthzRequest(body.request_id, user.id);
-      if (!pending) return htmlError(reply, 400, 'This authorization request has expired or was already used.', pickLang(user.lang));
+      if (!pending) return htmlError(reply, 400, 'error.expiredRequest', user.lang);
       const issuer = issuerFor(request);
 
       if (body.decision !== 'allow') {

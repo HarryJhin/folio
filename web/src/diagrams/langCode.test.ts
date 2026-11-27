@@ -11,6 +11,7 @@ describe('mapToExcalidrawLangCode', () => {
   });
 
   it('is case-insensitive and tolerates a region suffix i18next might already carry (e.g. "en-US")', () => {
+    expect(mapToExcalidrawLangCode('ko-KR')).toBe('ko-KR');
     expect(mapToExcalidrawLangCode('UK')).toBe('uk-UA');
     expect(mapToExcalidrawLangCode('en-US')).toBe('en');
   });

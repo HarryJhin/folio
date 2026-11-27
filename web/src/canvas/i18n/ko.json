@@ -1,0 +1,64 @@
+{
+  "loading": "캔버스 불러오는 중…",
+  "readOnlyNote": "Obsidian 캔버스를 읽기 전용으로 표시합니다. Folio에서는 원본 파일이 바뀌지 않습니다.",
+  "errorTitle": "캔버스를 열지 못했습니다",
+  "errorHint": "원본 파일은 그대로입니다. Obsidian 또는 Git에서 파일을 수정하세요.",
+  "warningsTitle": "캔버스에서 건너뛴 항목 {{count}}개",
+  "empty": "캔버스가 비어 있습니다.",
+  "toolbar": {
+    "fit": "화면에 맞추기",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "zoomReset": "100%로 보기",
+    "convert": "Folio 보드로 변환"
+  },
+  "card": {
+    "noAccess": "접근 권한 없음",
+    "missing": "파일을 찾을 수 없음",
+    "open": "열기",
+    "openFile": "파일 열기",
+    "subpathMissing": "섹션을 찾을 수 없어 노트의 처음을 표시합니다",
+    "emptyNote": "빈 노트",
+    "openLink": "링크 열기",
+    "kind": {
+      "doc": "노트",
+      "board": "보드",
+      "table": "표",
+      "form": "양식",
+      "pdf": "PDF",
+      "office": "Office 파일",
+      "canvas": "캔버스",
+      "folder": "폴더"
+    }
+  },
+  "convert": {
+    "title": "Folio 보드로 변환",
+    "intro": "이 캔버스를 바탕으로 새 보드를 만듭니다. 원본 캔버스는 그대로 보관합니다.",
+    "name": "보드 이름",
+    "location": "폴더",
+    "locationRoot": "스페이스 최상위",
+    "keep": "캔버스 보관",
+    "keepHint": "원본 캔버스 파일은 항상 보관됩니다.",
+    "lossesTitle": "보드에서 달라지는 점",
+    "lossesLoading": "변경 사항 확인 중…",
+    "noLosses": "모든 내용을 그대로 옮길 수 있습니다.",
+    "submit": "보드 만들기",
+    "creating": "만드는 중…",
+    "failed": "보드를 만들지 못했습니다",
+    "created": "보드를 만들었습니다",
+    "loss": {
+      "markdownFlattened": "텍스트 카드 {{count}}개의 마크다운 서식(제목, 강조, 링크)이 일반 텍스트로 바뀝니다",
+      "textCut": "카드보다 긴 텍스트 {{count}}개는 말줄임표(…)로 줄여 표시합니다",
+      "noteContentNotEmbedded": "노트 카드 {{count}}개에는 내용 대신 노트 제목과 링크가 표시됩니다",
+      "imageAsCard": "보드에 담기에는 너무 큰 이미지 {{count}}개는 링크 카드로 바뀝니다",
+      "mediaAsCard": "오디오, 동영상 등 파일 {{count}}개는 링크 카드로 바뀝니다",
+      "linkPreview": "웹페이지 카드 {{count}}개는 링크로 바뀝니다",
+      "groupBackground": "그룹 배경 이미지 {{count}}개는 제외됩니다",
+      "nestedGroups": "그룹 안에 있는 그룹 {{count}}개는 별도의 프레임이 됩니다",
+      "edgeRouting": "곡선 연결선 {{count}}개는 직각 화살표로 바뀝니다",
+      "noAccessCards": "접근할 수 없는 카드 {{count}}개는 ‘접근 권한 없음’으로 표시됩니다",
+      "missingCards": "파일을 찾을 수 없는 카드 {{count}}개에는 파일 경로만 남습니다",
+      "skippedInvalid": "파일에서 읽을 수 없는 항목 {{count}}개는 제외됩니다"
+    }
+  }
+}

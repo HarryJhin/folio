@@ -9,6 +9,7 @@ import type { TableCellValue, TableColumn, TableRow, TableView } from '@shared/c
 import { OptionPicker } from './OptionPicker';
 import { ValueChips } from './Chip';
 import { AnchoredPanel } from '../ui/AnchoredPanel';
+import { formatCalendarValue } from '../../app/formatDate';
 import { cellToText, formatCellText } from '../core';
 import { colorForValue, isOutOfList } from '../colors';
 import { Chip } from './Chip';
@@ -303,14 +304,15 @@ export function NumberCell(props: Props) {
 // ------------------------------------------------------------------ date
 
 export function DateCell(props: Props) {
+  const { i18n } = useTranslation('tables');
   const { column, search } = props.columnData;
   const value = cellToText(readValue(props));
   const withTime = column.time === true;
 
   if (!props.focus) {
     return (
-      <span className={`${READ_CLASS} ${alignClass(column)} tabular-nums`}>
-        <Highlighted text={value} search={search} />
+      <span className={`${READ_CLASS} ${alignClass(column)} tabular-nums`} title={value}>
+        <Highlighted text={formatCalendarValue(value, i18n.language)} search={search} />
       </span>
     );
   }
@@ -485,6 +487,7 @@ export function LinkCell(props: Props) {
 
 /** Static (non-grid) rendering of a cell — used by the row panel and the selection bar. */
 export function StaticCellValue({ column, value }: { column: TableColumn; value: TableCellValue }) {
+  const { i18n } = useTranslation('tables');
   if (column.type === 'checkbox') {
     return <span className="text-sm">{value === true ? '☑' : '☐'}</span>;
   }
@@ -504,7 +507,7 @@ export function StaticCellValue({ column, value }: { column: TableColumn; value:
       </span>
     );
   }
-  const text = formatCellText(column, value);
+  const text = column.type === 'date' ? formatCalendarValue(cellToText(value), i18n.language) : formatCellText(column, value);
   if (text === '') return <span className="text-sm text-neutral-400">—</span>;
   return <span className="text-sm whitespace-pre-wrap">{text}</span>;
 }

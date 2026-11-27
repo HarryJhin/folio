@@ -25,8 +25,8 @@ function plain(lang: Lang, key: TextKey): string {
   return escapeHtml(serverText(`oauth.${key}`, lang));
 }
 
-export function pickLang(userLang: string | null | undefined): Lang {
-  return resolveTextLanguage(userLang);
+export function pickLang(userLang: string | null | undefined, acceptLanguage?: string): Lang {
+  return resolveTextLanguage(userLang, acceptLanguage);
 }
 
 const STYLE = `
@@ -85,8 +85,11 @@ ${wantsWrite ? `<label><input type="checkbox" name="write" value="1" checked><sp
   return shell(v.lang, plain(v.lang, 'title'), body);
 }
 
-export function renderErrorPage(lang: Lang, message: string): string {
-  const body = `<h1>${plain(lang, 'errorTitle')}</h1><p>${escapeHtml(message)}</p><p class="muted">${plain(lang, 'back')}</p>`;
+export type OAuthErrorKey = Extract<TextKey, `error.${string}`>;
+
+export function renderErrorPage(lang: Lang, key: OAuthErrorKey, diagnostic?: string): string {
+  const details = diagnostic ? `<details><summary>${plain(lang, 'error.details')}</summary><p>${escapeHtml(diagnostic)}</p></details>` : '';
+  const body = `<h1>${plain(lang, 'errorTitle')}</h1><p>${plain(lang, key)}</p>${details}<p class="muted">${plain(lang, 'back')}</p>`;
   return shell(lang, plain(lang, 'errorTitle'), body);
 }
 

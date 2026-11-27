@@ -13,8 +13,8 @@
  *
  * The generic tags this builds on (title, description, og:*, twitter:*,
  * og:image) are written by pageMeta.ts into every index.html response; this
- * module then overrides the per-page ones. `lang="uk"` in web/index.html
- * matches the app's own DEFAULT_LANG (web/src/i18n/index.ts); the runtime
+ * module then overrides the per-page ones. `lang="ko"` in web/index.html
+ * matches the app's own DEFAULT_UI_LANGUAGE; the runtime
  * sets documentElement.lang correctly, but a preview bot reads the raw HTML.
  *
  * Title/body are USER CONTENT reaching an HTML attribute — every injected

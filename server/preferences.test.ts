@@ -33,9 +33,9 @@ describe('user language preference (round 10, real PG)', () => {
     expect(listed.find((u) => u.id === user.id)?.lang).toBe('en');
   });
 
-  it('lang can be changed repeatedly across both supported languages', async () => {
+  it('lang can be changed repeatedly across all supported languages', async () => {
     const user = await authStore.createUser({ email: 'multi-lang@prefs-test.local', name: 'Multi', passwordHash: 'x', isAdmin: false });
-    for (const lang of ['uk', 'en'] as const) {
+    for (const lang of ['ko', 'uk', 'en'] as const) {
       const updated = await authStore.updateUserLang(user.id, lang);
       expect(updated.lang).toBe(lang);
     }
@@ -93,6 +93,7 @@ describe('own display name preference (round 28)', () => {
     expect(updateMyPreferencesBodySchema.safeParse({ name: null }).success).toBe(false);
     // Additive change: the pre-round-28 bodies are all still valid, unchanged.
     expect(updateMyPreferencesBodySchema.safeParse({}).success).toBe(true);
+    expect(updateMyPreferencesBodySchema.safeParse({ lang: 'ko' }).success).toBe(true);
     expect(updateMyPreferencesBodySchema.safeParse({ lang: 'en' }).success).toBe(true);
     // Russian is no longer an interface language.
     expect(updateMyPreferencesBodySchema.safeParse({ lang: 'ru' }).success).toBe(false);

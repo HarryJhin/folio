@@ -3,13 +3,14 @@ import { UI_LANGUAGES, toUiLanguage } from './languages';
 import { pickInitialLanguage } from './index';
 
 describe('interface languages', () => {
-  it('are Ukrainian and English only, Ukrainian first', () => {
-    expect([...UI_LANGUAGES]).toEqual(['uk', 'en']);
+  it('offer Korean first, followed by the other supported languages', () => {
+    expect([...UI_LANGUAGES]).toEqual(['ko', 'uk', 'en']);
   });
 });
 
 describe('toUiLanguage', () => {
-  it('accepts our two languages with or without a region, in any case', () => {
+  it('accepts supported languages with or without a region, in any case', () => {
+    expect(toUiLanguage('ko-KR')).toBe('ko');
     expect(toUiLanguage('uk')).toBe('uk');
     expect(toUiLanguage('uk-UA')).toBe('uk');
     expect(toUiLanguage('EN-gb')).toBe('en');
@@ -40,8 +41,8 @@ describe('pickInitialLanguage', () => {
     expect(pickInitialLanguage('xx', ['uk-UA'])).toBe('uk');
   });
 
-  it('falls back to English when nothing matches', () => {
-    expect(pickInitialLanguage(null, ['de-DE', 'fr'])).toBe('en');
-    expect(pickInitialLanguage(null, [])).toBe('en');
+  it('falls back to Korean when nothing matches', () => {
+    expect(pickInitialLanguage(null, ['de-DE', 'fr'])).toBe('ko');
+    expect(pickInitialLanguage(null, [])).toBe('ko');
   });
 });

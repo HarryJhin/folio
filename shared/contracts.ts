@@ -1,3 +1,4 @@
+import { UI_LANGUAGE_CODES } from './uiLanguage.js';
 import { z } from 'zod';
 import type { AgentWriteMode } from './proposals.js';
 
@@ -1476,9 +1477,9 @@ export interface ErrorResponse {
 // this module) before this move — the block used to sit at the bottom of
 // the file, after userSchema.
 
-export const uiLanguageSchema = z.enum(['uk', 'en']);
+export { DEFAULT_UI_LANGUAGE } from './uiLanguage.js';
+export const uiLanguageSchema = z.enum(UI_LANGUAGE_CODES);
 export type UiLanguage = z.infer<typeof uiLanguageSchema>;
-export const DEFAULT_UI_LANGUAGE: UiLanguage = 'uk';
 
 // ---------- @mentions (round 15) ----------
 

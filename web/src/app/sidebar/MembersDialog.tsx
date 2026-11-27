@@ -371,7 +371,7 @@ function AddMemberForm({ isInstanceAdmin, candidates, pending, onAdd }: AddMembe
         </label>
       ) : (
         <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-neutral-500 dark:text-neutral-400">
-          Email
+          {t('ui.email')}
           <input
             type="email"
             value={email}

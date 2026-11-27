@@ -536,7 +536,7 @@ export function registerRoutes(app: FastifyInstance): void {
       // An empty space starts with three ready templates, in the creator's language.
       space = await storage.createSpace(body.name, user.id, {
         starterTemplates: true,
-        language: resolveTextLanguage(user.lang, request.headers['accept-language']) === 'uk' ? 'uk' : 'en',
+        language: resolveTextLanguage(user.lang, request.headers['accept-language']),
       });
     }
     await authStore.setMembership(space.slug, user.id, 'admin');

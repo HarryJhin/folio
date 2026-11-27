@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, ChevronDown, ChevronRight, Sigma } from 'lucide-react';
 import type { PropertyType } from '@shared/contracts';
 import type { BaseCell, BaseColumn, BaseQueryResponse, BaseRow } from '@shared/bases/types';
+import { formatCalendarValue } from '../app/formatDate';
 import { cellText, columnLabel, editText, editorFor, layOut, parseEdit, type CellEditor } from './model';
 import './i18n/register';
 
@@ -32,7 +33,7 @@ export interface BaseResultsProps {
 // ---------------------------------------------------------------------------
 
 export function CellView({ cell, pageHref, plain }: { cell: BaseCell | undefined; pageHref: PageHref; plain?: boolean }): ReactNode {
-  const { t } = useTranslation('bases');
+  const { t, i18n } = useTranslation('bases');
   if (cell === null || cell === undefined) return null;
   switch (cell.t) {
     case 'link':
@@ -63,7 +64,7 @@ export function CellView({ cell, pageHref, plain }: { cell: BaseCell | undefined
         <span className="flex flex-wrap gap-1">
           {cell.v.map((item, i) => (
             <span key={i} className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs dark:bg-neutral-800">
-              {item && item.t === 'link' ? <CellView cell={item} pageHref={pageHref} plain={plain} /> : cellText(item)}
+              {item && (item.t === 'link' || item.t === 'date' || item.t === 'datetime') ? <CellView cell={item} pageHref={pageHref} plain={plain} /> : cellText(item)}
             </span>
           ))}
         </span>
@@ -83,6 +84,9 @@ export function CellView({ cell, pageHref, plain }: { cell: BaseCell | undefined
           {t('cell.unsupported')}
         </span>
       );
+    case 'date':
+    case 'datetime':
+      return <span className="tabular-nums">{formatCalendarValue(cell.v, i18n.language, 'utc')}</span>;
     case 'number':
       return <span className="tabular-nums">{cellText(cell)}</span>;
     default:

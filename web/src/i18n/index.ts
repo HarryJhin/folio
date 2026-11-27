@@ -1,5 +1,6 @@
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { DEFAULT_UI_LANGUAGE } from '@shared/uiLanguage';
 import type { UiLanguage } from '@shared/contracts';
 import { api } from '../app/api';
 import { UI_LANGUAGES, isUiLanguage, toUiLanguage } from './languages';
@@ -20,13 +21,12 @@ import { UI_LANGUAGES, isUiLanguage, toUiLanguage } from './languages';
 export const LANG_STORAGE_KEY = 'folio:lang';
 /** The languages this build has bundles for — see ./languages.ts. */
 const SUPPORTED_LANGS: readonly UiLanguage[] = UI_LANGUAGES;
-const DEFAULT_LANG: UiLanguage = 'en';
 
 const isSupported = isUiLanguage;
 
 /**
  * localStorage -> browser language (first available match; Russian counts as
- * Ukrainian) -> English. The user's
+ * Ukrainian) -> Korean. The user's
  * own PROFILE preference isn't known yet at this point — it needs an
  * authenticated fetch, which only happens once AuthProvider mounts and
  * resolves GET /api/auth/state. See reconcileLanguageFromProfile below for
@@ -39,7 +39,7 @@ export function pickInitialLanguage(stored: string | null, browserLanguages: rea
     const language = toUiLanguage(candidate);
     if (language) return language;
   }
-  return DEFAULT_LANG;
+  return DEFAULT_UI_LANGUAGE;
 }
 
 function resolveInitialLanguage(): UiLanguage {
@@ -68,7 +68,7 @@ export function initI18n(): Promise<unknown> {
       .use(initReactI18next)
       .init({
         lng: resolveInitialLanguage(),
-        fallbackLng: DEFAULT_LANG,
+        fallbackLng: 'en',
         supportedLngs: SUPPORTED_LANGS as unknown as string[],
         ns: ['app', 'editor', 'diagrams', 'markdown', 'emoji', 'tables'],
         defaultNS: 'app',

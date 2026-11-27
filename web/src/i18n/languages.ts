@@ -1,3 +1,4 @@
+import { UI_LANGUAGE_CODES } from '@shared/uiLanguage';
 import type { UiLanguage } from '@shared/contracts';
 import { bundlesFrom } from './bundles';
 
@@ -9,8 +10,7 @@ import { bundlesFrom } from './bundles';
  */
 const APP_BUNDLES = bundlesFrom(import.meta.glob('../app/i18n/*.json', { eager: true, import: 'default' }));
 
-/** Ukrainian first (the default), English second, anything else after them. */
-const PREFERRED_ORDER = ['uk', 'en'];
+const PREFERRED_ORDER: readonly string[] = UI_LANGUAGE_CODES;
 
 export const UI_LANGUAGES: readonly UiLanguage[] = Object.keys(APP_BUNDLES).sort((a, b) => {
   const ia = PREFERRED_ORDER.indexOf(a);
