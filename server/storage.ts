@@ -6004,6 +6004,23 @@ export async function saveAssetIntoRepo(space: string, originalName: string, dat
   return { url: `/files/${space}/assets/${finalName}`, path: `assets/${finalName}` };
 }
 
+export async function findRepoAssetByContent(space: string, originalName: string, sha256: string): Promise<{ url: string; path: string } | null> {
+  const assetsDir = path.join(spaceDir(space), 'assets');
+  const safeName = sanitizeAssetFilename(originalName);
+  const ext = path.extname(safeName);
+  const stem = safeName.slice(0, safeName.length - ext.length) || 'asset';
+  const escape = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const family = new RegExp(`^${escape(stem)}(-\\d+)?${escape(ext)}$`);
+  const names = (await fs.readdir(assetsDir).catch(() => [] as string[])).filter((name) => family.test(name)).sort();
+  for (const name of names) {
+    const data = await fs.readFile(path.join(assetsDir, name)).catch(() => null);
+    if (data && createHash('sha256').update(data).digest('hex') === sha256) {
+      return { url: `/files/${space}/assets/${name}`, path: `assets/${name}` };
+    }
+  }
+  return null;
+}
+
 export async function setSpaceFirstView(space: string, firstView: SpaceFirstView): Promise<void> {
   const row = await queryOne('UPDATE spaces SET first_view = $2 WHERE slug = $1 RETURNING slug', [space, firstView]);
   if (!row) throw notFound('space');

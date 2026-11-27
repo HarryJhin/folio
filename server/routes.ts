@@ -88,6 +88,7 @@ import * as assets from './assets.js';
 import { bindSubmittedAssets } from './assetRoute.js';
 import * as git from './git.js';
 import * as gitSync from './gitSync.js';
+import { storeUploadedAsset } from './assetIntake.js';
 import { inspectFilePageUpload, replaceFilePage, restoreFilePageVersion } from './filePages.js';
 import { startPeriodicFetchForSpace } from './gitSync.js';
 import * as gitTree from './gitTree.js';
@@ -819,19 +820,15 @@ export function registerRoutes(app: FastifyInstance): void {
     if (!file) throw badRequest('no file uploaded (expected multipart field "file")');
     const buffer = await file.toBuffer();
 
-    const info = await storage.getSpaceInfo(space);
-    let result: UploadAssetResponse;
-    if (info?.assetMode === 'repo') {
-      result = await storage.saveAssetIntoRepo(space, file.filename, buffer);
-      if (pageId && result.path) await grantUploadedRepoFile(pageId, result.path);
-      // A new file in the working tree: attribute it to the uploader and let the
-      // standard debounced auto-commit pick it up (commitAll stages everything,
-      // so assets/ rides along with the page edit that references it).
-      gitSync.recordEditor(space, { name: request.authUser!.name, email: request.authUser!.email });
-      gitSync.noteActivity(space);
-    } else {
-      result = await assets.putAsset(buffer, { mime: file.mimetype, filename: file.filename }, request.authUser!.id, pageId || undefined);
-    }
+    const stored = await storeUploadedAsset({
+      space,
+      pageId: pageId || undefined,
+      filename: file.filename,
+      data: buffer,
+      mime: file.mimetype,
+      user: { id: request.authUser!.id, name: request.authUser!.name, email: request.authUser!.email },
+    });
+    const result: UploadAssetResponse = stored.path ? { url: stored.url, path: stored.path } : { sha256: stored.sha256, size: stored.size, url: stored.url };
     reply.status(201);
     return result;
   });
