@@ -36,7 +36,7 @@ Codex, n8n, Open WebUI, ChatGPT and Claude are in
 
 Three access rules:
 
-- `/mcp` accepts a personal access token or an OAuth access token (see below); a session cookie is rejected there with 401. An OAuth access token works only on `/mcp`, not on the REST API.
+- `/mcp` accepts a personal access token or an OAuth access token (see below); a session cookie is rejected there with 401. An OAuth access token works only on `/mcp` and `/mcp/uploads/*`, not on the REST API.
 - Administrative routes (`/api/admin/*`, `/api/access/*`, `/api/invites`) and
   changes to page access are cookie-only. A token does not reach them with any
   scope.
@@ -219,6 +219,68 @@ Operator names are case-insensitive, and an unknown `something:else` is an ordin
 **Structured results.** Every tool declares an `outputSchema` in `tools/list` and returns its result as `structuredContent` (MCP spec 2025-06-18) in addition to the same data as JSON text in `content`, so clients that do not read structured content keep working unchanged. The schema root is always an object, so a tool whose answer is a list wraps it under one key in `structuredContent`: `list_spaces` → `{"spaces": [...]}`, `list_tree` → `{"tree": [...]}`, `search_pages` → `{"hits": [...]}`, `get_backlinks` → `{"backlinks": [...]}`, `list_orphans` → `{"pages": [...]}`, `list_tags` → `{"tags": [...], ...}`, `list_properties` → `{"properties": [...], ...}`, `get_graph` → `{"nodes": [...], "edges": [...], ...}`, `page_history` → `{"revisions": [...]}`, `folio_table_list` → `{"tables": [...]}`; the text form stays the bare array. `folio_table_query` with `format: "markdown"` returns `{"markdown", "total"}`. A failed call is an ordinary `isError` result with a text message and no structured content.
 
 **Tool names.** Names are `snake_case`; the data-table tools share the `folio_table_` prefix, and `search` / `fetch` keep the exact names ChatGPT requires. Some catalogs (Smithery's "Naming" check) prefer dot-separated hierarchical names such as `table.query`. Folio does not use them: Claude, OpenAI and most other clients only accept tool names matching `[a-zA-Z0-9_-]`, and renaming would break every existing connection and saved prompt. The names stay as they are.
+
+## Uploading files to a page
+
+`request_upload` attaches files to a page without passing their bytes through
+the model. It takes `page` (a page id) and `files`: 1 to 200 entries, each with
+`name`, `size` in bytes and `sha256` as 64 lowercase hex characters. It returns
+`{"uploads": [{name, size, sha256, url, expiresAt}]}`, one signed upload URL per
+file. It needs a `write` token and the editor role in the page's space and on
+the page. It is refused in a space in review mode and in the public demo. If
+one file is over the size limit, the whole call is refused.
+
+Send each file from a shell with `PUT` to its `url`. Use the same
+`Authorization` header as the MCP connection and
+`Content-Type: application/octet-stream`. Keep the token off the command line
+and out of any output: put the header line in a file with mode 600 and delete
+the file after sending.
+
+```bash
+HEADER_FILE=$(mktemp)
+printf 'Authorization: Bearer %s\n' "$FOLIO_TOKEN" > "$HEADER_FILE"
+curl --fail-with-body -X PUT \
+  -H @"$HEADER_FILE" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @report.pdf \
+  "https://wiki.example.com/mcp/uploads/<token>"
+rm -f "$HEADER_FILE"
+```
+
+`mktemp` creates the file with mode 600, and `printf` is a shell builtin, so
+the token does not appear in the process list. `-H @file` needs curl 7.55 or
+newer, `--fail-with-body` curl 7.76 or newer.
+
+A URL is bound to the page and to the `name`, `size` and `sha256` declared
+for it, and works until `expiresAt`. Only the token that requested the URL can
+use it. When the `PUT` arrives, Folio checks the token, the roles and review
+mode again before it reads the body, so a token revoked, a role lowered or a
+page deleted after the call refuses the upload. Sending the same bytes again
+returns the same result and stores no second copy.
+
+| Status | Meaning |
+|---|---|
+| `201` | Stored. The body is `{"sha256", "size", "url"}`; a space that stores files in the repository also returns `path` (`assets/<name>`) |
+| `400` | `Content-Length` or the body length differs from `size` |
+| `401` | No valid token, with `WWW-Authenticate` as on `/mcp`. A session cookie is not accepted |
+| `403` | A different token than the one that requested the URL, no `write` scope, a missing editor role, review mode, the public demo, or a browser `Origin` that `/mcp` would refuse |
+| `404` | The URL is invalid or has expired, or the page does not exist or is hidden from you |
+| `411` | No `Content-Length` (for example a chunked body) |
+| `413` | The body is larger than the limit |
+| `415` | `Content-Type` is not `application/octet-stream` |
+| `422` | The sha256 of the body differs from `sha256`. Nothing is stored |
+
+After the upload, link the file from the page, for example with `update_page`.
+In a space that keeps files in the asset store, people who can open the page
+can read the file only once the page links to it.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `FOLIO_MCP_UPLOAD_MAX_BYTES` | `52428800` (50 MB) | Largest file per upload URL |
+| `FOLIO_MCP_UPLOAD_TTL_SECONDS` | `900` (15 minutes) | How long an upload URL stays valid |
+
+A reverse proxy in front of Folio must pass `PUT /mcp/uploads/*` to the app
+and must not cut off a large upload with a short request timeout.
 
 ## REST: what MCP does not cover
 

@@ -2,7 +2,8 @@
  * The /mcp mount: stateless Streamable HTTP, authenticated with EITHER a personal access token
  * (`folio_pat_…`, unchanged) OR an OAuth 2.1 access token (`folio_oat_…`, issued by server/oauth).
  * Cookie sessions are never accepted here. OAuth access tokens are audience-bound to this very
- * URL (RFC 8707) and exist only for this endpoint: the REST API's own auth does not know them.
+ * URL (RFC 8707) and exist only for this endpoint and its signed upload route `PUT /mcp/uploads/*`:
+ * the REST API's own auth does not know them.
  *
  * A request without valid credentials gets 401 plus `WWW-Authenticate: Bearer resource_metadata=…`
  * (RFC 9728), which is what makes an MCP client start the OAuth flow by itself.
@@ -25,6 +26,7 @@ import {
   type DemoLimitResult,
 } from './demoLimits.js';
 import { MCP_WRITE_TOOL_NAMES, buildFolioMcpServer } from './mcp.js';
+import { mcpUploadRoutes } from './mcpUploadRoutes.js';
 import * as oauthStore from './oauth/store.js';
 import { issuerFor, mcpResourceFor, protectedResourceMetadataUrl } from './oauth/routes.js';
 import { requestOrigin } from './publicUrl.js';
@@ -60,7 +62,7 @@ export async function resolveMcpAuth(request: FastifyRequest): Promise<McpAuth |
   return { user: resolved.user, scopes: resolved.tokenScopes ?? [], tokenId: resolved.tokenId! };
 }
 
-function sendUnauthorized(request: FastifyRequest, reply: FastifyReply, message: string): void {
+export function sendUnauthorized(request: FastifyRequest, reply: FastifyReply, message: string): void {
   const presented = Boolean(request.headers.authorization);
   const challenge = `Bearer resource_metadata="${protectedResourceMetadataUrl(request)}"${presented ? ', error="invalid_token"' : ''}`;
   reply.header('WWW-Authenticate', challenge).status(401).send({ jsonrpc: '2.0', error: { code: -32001, message }, id: null });
@@ -79,28 +81,33 @@ function rateMessage(what: string, r: DemoLimitResult): string {
 /** Largest /mcp body outside the demo (was 1 MB): room for publish_artifact with its data inlined. Bigger bundles go through the web upload (50 MB). */
 const MCP_MAX_BODY_BYTES = 25 * 1024 * 1024;
 
-/** Register before CORS so it also guards OPTIONS requests handled by the CORS plugin. */
-async function guardMcpOrigin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  if (request.routeOptions.url !== '/mcp' && request.url.split('?', 1)[0] !== '/mcp') return;
-  const origin = request.headers.origin;
-  if (origin === undefined) return;
+export function isAllowedMcpOrigin(request: FastifyRequest, origin: string): boolean {
   try {
     const source = new URL(origin);
     if (source.origin === origin && (source.protocol === 'https:' || source.protocol === 'http:')) {
       const extra = (process.env.FOLIO_MCP_ALLOWED_ORIGINS ?? '').split(',').map((entry) => entry.trim());
-      if (extra.includes(origin)) return;
+      if (extra.includes(origin)) return true;
       const publicUrl = publicUrlOrOrigin('');
       const base = new URL(publicUrl || `${request.protocol}://${request.host}`);
       // Only a loopback Host can supply a default origin for an unconfigured local instance.
       const local = ['127.0.0.1', '[::1]', 'localhost'].includes(base.hostname);
-      if ((publicUrl || local) && origin === base.origin) return;
+      if ((publicUrl || local) && origin === base.origin) return true;
     }
   } catch { /* Malformed or opaque origins are refused. */ }
+  return false;
+}
+
+/** Register before CORS so it also guards OPTIONS requests handled by the CORS plugin. */
+async function guardMcpOrigin(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (request.routeOptions.url !== '/mcp' && request.url.split('?', 1)[0] !== '/mcp') return;
+  const origin = request.headers.origin;
+  if (origin === undefined || isAllowedMcpOrigin(request, origin)) return;
   reply.status(403).send({ error: 'Origin is not allowed for MCP' });
 }
 
 export function registerMcpRoutes(app: FastifyInstance): void {
   app.addHook('onRequest', guardMcpOrigin);
+  void app.register(mcpUploadRoutes);
   // Public demo: refuse an oversized body from its Content-Length before it is read (the route's own bodyLimit covers chunked uploads).
   const refuseOversizedInDemo = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!isDemoMode()) return;

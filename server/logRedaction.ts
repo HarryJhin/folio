@@ -4,7 +4,7 @@ import type { FastifyRequest } from 'fastify';
 const REDACTED_QUERY_PATHS = new Set(['/api/auth/google/callback', '/api/auth/github-connect/callback']);
 
 const SECRET_QUERY_PARAM_RE = /([?&](?:guestToken|share)=)[^&#]*/gi;
-const BEARER_PATH_RE = /^(\/(?:api\/share|share|art(?:\/guest)?)\/)[^/?#]+/;
+const BEARER_PATH_RE = /^(\/(?:api\/share|share|art(?:\/guest)?|mcp\/uploads)\/)[^/?#]+/;
 
 export function redactRequestUrl(url: string): string {
   const q = url.indexOf('?');

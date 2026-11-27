@@ -4,6 +4,7 @@ Changes integrated into the `custom` branch, dated by source commit. The first e
 
 ## 2026-11-27
 
+- Agents can attach files to a page through MCP. `request_upload` issues a signed upload URL per file, and `PUT /mcp/uploads/*` stores the bytes after it checks the token, the roles, the size and the sha256. An OAuth access token also works on this route.
 - Markdown and MDX documents offer owner, verification date, next review and tags on first open. Turning off wiki properties on one document preserves its stored values and pauses reminders. Verification checks the displayed body revision. [PR #11](https://github.com/HarryJhin/folio/pull/11)
 - Added Korean to the interface, including the editor and offline reader. [PR #10](https://github.com/HarryJhin/folio/pull/10)
 - The space switcher and MCP list every accessible space. [PR #9](https://github.com/HarryJhin/folio/pull/9)

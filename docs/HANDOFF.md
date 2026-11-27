@@ -622,10 +622,11 @@ PostgreSQL, not in Git.
   authorization code with PKCE S256 only, consent on top of the cookie
   session, one-hour access tokens, rotating 30-day refresh tokens (reuse of an
   old one revokes the connection), audience `https://<host>/mcp` (RFC 8707),
-  everything stored as hashes. OAuth tokens work on `/mcp` only, never on
-  REST, and a `read` grant cannot run write tools. Metadata and audience are
-  built from `PUBLIC_URL`, so it must be set to the public address, and the
-  reverse proxy must pass `/.well-known/*` and `/oauth/*` to the app.
+  everything stored as hashes. OAuth tokens work on `/mcp` and
+  `/mcp/uploads/*` only, never on REST, and a `read` grant cannot run write
+  tools. Metadata and audience are built from `PUBLIC_URL`, so it must be set
+  to the public address, and the reverse proxy must pass `/.well-known/*` and
+  `/oauth/*` to the app.
 - **stdio bridge** (`server/mcpStdio.ts`, `npm run mcp:stdio`): for clients
   that only speak stdio and for directories that start a server from a Docker
   image to inspect it. With `FOLIO_URL` and `FOLIO_TOKEN` it forwards tools,

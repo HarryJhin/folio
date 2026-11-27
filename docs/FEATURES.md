@@ -1062,6 +1062,16 @@ unresolved links and orphan pages, the link graph of a space or a page's neighbo
 commit, working with whiteboards (and converting an Obsidian canvas into one), a full set of operations on data tables (rows, columns, views), and building forms with the table their answers go to.
 See [MCP.md](MCP.md).
 
+**File uploads from agents.** `request_upload` gives an agent one signed,
+short-lived upload URL per file (15 minutes by default). The agent sends the
+bytes from a shell with `PUT /mcp/uploads/*` and its own token, so the file
+never passes through the model. Before it reads the body, Folio checks the
+token, the editor role in the space and on the page, and review mode again;
+then it checks the size and the sha256 and attaches the file to the page.
+Sending the same file again stores no second copy, in the asset store and in
+a space that stores files in the repository. See
+[MCP.md](MCP.md#uploading-files-to-a-page).
+
 ### Link previews in Slack and Microsoft Teams
 
 A Folio link pasted into Slack or Teams unfurls into a card: icon and title,
