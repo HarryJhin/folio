@@ -6,6 +6,8 @@ For changes integrated into the `custom` branch, see the [fork changelog](CHANGE
 
 ## [Unreleased]
 
+- Documents in all spaces offer owner, verification date, next review and tags by default. Editors can switch these fields and review reminders off per page. Marking a document verified checks the version the editor read.
+
 - Added Korean throughout the interface, including the editor, whiteboard, offline reader, forms and administration. Date fields use the selected language and preserve calendar dates across time zones.
 
 - Shared and published HTML artifacts now recheck access to each bundle file. Visitors can submit directly shared forms that accept anonymous responses.

@@ -175,6 +175,15 @@ in the tree. `read_page` and `fetch` return a `verification` block. Once a day,
 overdue pages send a reminder to the owner's bell, or to the space admins when
 there is no owner, at most once a week per page.
 
+Documents show four fields under the title on first use: owner, verification
+date, next review and tags. Empty fields also appear on Markdown and MDX
+documents that have no YAML. Opening a document leaves its Git file untouched.
+An editor can turn off **Wiki properties** in the page actions menu, including
+on a space home backed by a document. This hides the fields and badge and
+pauses new review reminders. Turning it back on restores the saved values and
+resumes reminders against the existing deadline. A home that lists files has
+no document switch. Changing the setting requires a connection.
+
 **Shared page timer.** Every page has a timer icon in its header (document, table,
 whiteboard, form, PDF/Office, a space's home page; a folder listing has one for
 the space): presets of 1, 3, 5 and 10 minutes, or a custom time (minutes and
@@ -849,7 +858,7 @@ it exactly as they read a space with `instance` visibility.
 
 ### Properties, tags, search operators and space files
 
-- **Properties panel** (collapsed by default): the page's front matter keys with
+- **Properties panel** remembers the space’s expand/collapse preference and shows the page’s front matter keys with
   types `text`, `number`, `checkbox`, `date`, `datetime`, `list`, `tags`,
   `aliases`. Types come from `.folio/properties.json` in the repository, or from
   `.obsidian/types.json` when that file is absent. Saving rewrites only the front
