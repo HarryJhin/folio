@@ -2,6 +2,8 @@
 
 Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.org/).
 
+For changes integrated into the `custom` branch, see the [fork changelog](CHANGELOG-CUSTOM.md).
+
 ## [Unreleased]
 
 - Added Korean throughout the interface, including the editor, whiteboard, offline reader, forms and administration. Date fields use the selected language and preserve calendar dates across time zones.
