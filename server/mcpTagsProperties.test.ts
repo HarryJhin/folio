@@ -536,6 +536,34 @@ describe('MCP tags, properties and bases (real PG + git)', () => {
     });
   });
 
+  it('keeps indexed JSON dates on fresh metadata reads and returns a token only for the file it read', async () => {
+    const { id } = await storage.createPage({ space: slug, parentPath: '', title: 'Metadata dates', kind: 'doc' });
+    const { absPath } = await storage.requireEntry(id);
+    const original = await fs.readFile(absPath, 'utf8');
+    const raw = original.replace('---\n', '---\ndue: 2026-10-01\nchecked: 2026-10-01T20:05:10+09:00\nquoted: "2026-10-01"\n');
+    await fs.writeFile(absPath, raw);
+    await storage.scanSpace(slug);
+    const metadata = () => call(as(viewer), 'get_page_metadata', { id }).then(r => ok(r));
+    const first = await metadata();
+    expect(first.properties).toMatchObject({ due: '2026-10-01T00:00:00.000Z', checked: '2026-10-01T11:05:10.000Z', quoted: '2026-10-01' });
+    expect(first.propertyEtag).toEqual(expect.any(String));
+    await fs.rename(absPath, absPath + '.away');
+    try {
+      const cached = await metadata();
+      expect(cached.properties).toEqual(first.properties);
+      expect(cached).not.toHaveProperty('propertyEtag');
+    } finally {
+      await fs.rename(absPath + '.away', absPath);
+    }
+    await fs.writeFile(absPath, raw.replace('due: 2026-10-01', 'due: 2026-10-02'));
+    const fresh = await metadata();
+    expect(fresh.properties.due).toBe('2026-10-02T00:00:00.000Z');
+    expect(fresh.propertyEtag).not.toEqual(first.propertyEtag);
+    const args = { id, wikiPropertiesEnabled: false };
+    expect((await call(as(editor), 'set_page_properties', { ...args, etag: first.propertyEtag })).isError).toBe(true);
+    expect(ok(await call(as(editor), 'set_page_properties', { ...args, etag: fresh.propertyEtag })).wikiProperties.enabled).toBe(false);
+  });
+
   it('reads default fields and switches them without replacing other document properties', async () => {
     const created = await storage.createPage({ space: slug, parentPath: '', title: 'Wiki fields', kind: 'doc' });
     const id = created.id;

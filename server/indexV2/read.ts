@@ -11,6 +11,7 @@
  *    path as written) — the MCP "page not found" rule: a closed page and a page
  *    that does not exist look the same.
  */
+import { readFile } from 'node:fs/promises';
 import type {
   BacklinkContext,
   LinkFragmentKind,
@@ -26,9 +27,12 @@ import type {
   UnresolvedLinksResponse,
 } from '../../shared/contracts.js';
 import { query, queryOne } from '../db/pool.js';
-import { readPageProperties } from '../properties.js';
+import { wikiPropertiesFor } from '../../shared/verification.js';
+import { readFrontmatterBlock } from '../frontmatter.js';
+import { frontmatterEtag } from '../properties.js';
 import { getEntry, type PageIndexEntry } from '../storage.js';
 import { sqlParam, visiblePagesSql, type PageViewer } from '../accessSql.js';
+import { frontmatterJson } from './store.js';
 import { applyWikilinkCatalog, spaceWikilinkCatalog } from './wikilinkCatalog.js';
 import { APP_LINK_SHAPE, isWikiSyntax, unresolvedWikiPath } from './resolve.js';
 
@@ -219,7 +223,18 @@ export async function getPageMetadata(page: Pick<PageIndexEntry, 'id' | 'space' 
   );
 
   const entry = 'absPath' in page ? page : await getEntry(page.id);
-  const snapshot = entry?.kind === 'doc' ? await readPageProperties(entry, false) : undefined;
+  let properties = row?.frontmatter ?? {};
+  let propertyEtag: string | null | undefined;
+  if (entry?.kind === 'doc') {
+    const raw = await readFile(entry.absPath, 'utf8').catch(() => undefined);
+    if (raw !== undefined) {
+      const block = readFrontmatterBlock(raw);
+      // Metadata has always exposed the index's JSON representation, including ISO timestamps.
+      properties = JSON.parse(frontmatterJson(block.data));
+      if (block.parseable) propertyEtag = frontmatterEtag(block.text);
+    }
+  }
+  const wikiProperties = entry && wikiPropertiesFor(entry.kind, properties);
   return {
     id: page.id,
     space: page.space,
@@ -228,9 +243,9 @@ export async function getPageMetadata(page: Pick<PageIndexEntry, 'id' | 'space' 
     headings,
     blocks,
     tags,
-    properties: snapshot?.properties ?? row?.frontmatter ?? {},
-    ...(snapshot?.wikiProperties && { wikiProperties: snapshot.wikiProperties }),
-    ...(snapshot?.propertyEtag !== undefined && { propertyEtag: snapshot.propertyEtag }),
+    properties,
+    ...(wikiProperties && { wikiProperties }),
+    ...(propertyEtag !== undefined && { propertyEtag }),
     links,
     backlinkCount: count?.n ?? 0,
     metaVersion: row?.meta_version ?? 0,
