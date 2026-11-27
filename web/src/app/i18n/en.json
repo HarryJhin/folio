@@ -1,4 +1,10 @@
 {
+  "wikiProperties": {
+    "label": "Wiki properties",
+    "pause": "Turning this off pauses review reminders for this page.",
+    "resume": "Turning this on resumes reminders against the saved review date.",
+    "reviewAgain": "The reviewed text could not be confirmed. Reload and review the page before marking it verified."
+  },
   "_language": "English",
   "newVersion": {
     "message": "A new version of Folio is available.",

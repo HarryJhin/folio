@@ -90,6 +90,7 @@ export interface PagePropertiesFrame {
 export function applyPagePropertiesFrame(queryClient: QueryClient, event: PagePropertiesFrame): void {
   if (typeof event.space !== 'string' || !event.space) return;
   lastClient = queryClient;
+  void queryClient.invalidateQueries({ queryKey: ['tree', event.space] });
   requestBaseRefresh(queryClient, event.space);
   if (typeof event.pageId === 'string' && event.pageId) {
     const pageId = event.pageId;
@@ -113,6 +114,8 @@ export function applyPagePropertiesFrame(queryClient: QueryClient, event: PagePr
 /** The socket came back after a break: whatever is open may have changed meanwhile. */
 export function refreshAllPageProperties(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ['page-properties'] });
+  void queryClient.invalidateQueries({ queryKey: ['page'] });
+  void queryClient.invalidateQueries({ queryKey: ['tree'] });
   void queryClient.invalidateQueries({ queryKey: ['base'] });
 }
 

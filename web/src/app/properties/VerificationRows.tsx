@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api';
+import { computeVerification, pickVerificationProps } from '@shared/verification';
+import { api, ApiError } from '../api';
 import { useApiErrorText } from '../errorText';
 import { formatVerificationDay } from '../page-meta/VerificationBadge';
 import '../i18n/register';
@@ -18,11 +19,15 @@ const LABEL = 'min-w-0 truncate px-1.5 py-1 text-neutral-500 dark:text-neutral-4
  * the space with a username, the list the @ picker offers), the date field and "Mark as verified". Writes go through
  * PUT /api/pages/:id/verification.
  */
-export function VerificationRows({ space, pageId, editable, forceShow }: { space: string; pageId: string; editable: boolean; forceShow: boolean }) {
+export function VerificationRows({ space, pageId, editable, forceShow, wikiValues, reviewedMarkdown }: {
+  space: string; pageId: string; editable: boolean; forceShow: boolean; wikiValues?: Record<string, unknown>; reviewedMarkdown?: () => string | undefined;
+}) {
   const { t, i18n } = useTranslation('app');
   const queryClient = useQueryClient();
   const errorText = useApiErrorText();
   const [error, setError] = useState<string | null>(null);
+  const [needsReview, setNeedsReview] = useState(false);
+  const defaults = wikiValues !== undefined;
 
   const { data: page } = useQuery({ queryKey: ['page', pageId], queryFn: () => api.getPage(pageId) });
   const { data: people } = useQuery({
@@ -34,17 +39,39 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
   });
 
   const save = useMutation({
-    mutationFn: (body: Parameters<typeof api.updateVerification>[1]) => api.updateVerification(pageId, body),
+    networkMode: 'always',
+    retry: false,
+    mutationFn: async ({ body, reviewed }: { body: Parameters<typeof api.updateVerification>[1]; reviewed?: string }) => {
+      if (!body.markVerified || !defaults) return api.updateVerification(pageId, body);
+      if (reviewed === undefined) throw new Error(t('wikiProperties.reviewAgain'));
+      let baseRevision = reviewed === page?.markdown ? page?.bodyRevision : undefined;
+      if (!baseRevision && globalThis.crypto?.subtle) {
+        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(reviewed.replace(/\r\n?/g, '\n')));
+        baseRevision = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+      }
+      if (!baseRevision) {
+        const fresh = await api.getPage(pageId);
+        if (fresh.markdown === reviewed) baseRevision = fresh.bodyRevision;
+      }
+      if (!baseRevision) throw new Error(t('wikiProperties.reviewAgain'));
+      return api.updateVerification(pageId, { ...body, baseRevision });
+    },
     onMutate: () => setError(null),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['page', pageId] });
       void queryClient.invalidateQueries({ queryKey: ['tree', space] });
       void queryClient.invalidateQueries({ queryKey: ['page-properties', pageId] });
     },
-    onError: (err) => setError(errorText(err, 'verification.saveFailed')),
+    onError: (err, { body }) => {
+      if (body.markVerified && defaults && (err instanceof ApiError && [409, 428].includes(err.status) || err.message === t('wikiProperties.reviewAgain'))) {
+        setNeedsReview(true);
+        setError(t('wikiProperties.reviewAgain'));
+        void queryClient.invalidateQueries({ queryKey: ['page-properties', pageId] });
+      } else setError(errorText(err, 'verification.saveFailed'));
+    },
   });
 
-  const verification = page?.verification;
+  const verification = defaults ? computeVerification(pickVerificationProps(wikiValues), page?.updatedAt) : page?.verification;
   const owner = verification?.owner ?? '';
   const verified = verification?.verified;
   const reviewBy = verification?.reviewBy ?? '';
@@ -52,11 +79,10 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
   const ownerKnown = owner === '' || choices.some((u) => u.username === owner);
   const day = (value: string) => formatVerificationDay(value, i18n.language);
 
-  const showOwner = editable || owner !== '';
-  const showVerified = verified !== undefined || editable;
-  const showReview = editable || reviewBy !== '';
-  if (!editable && !verification) return null;
-  if (editable && !verification && !forceShow) return null;
+  const showOwner = defaults || editable || owner !== '';
+  const showVerified = defaults || verified !== undefined || editable;
+  const showReview = defaults || editable || reviewBy !== '';
+  if (!verification && !defaults && !(editable && forceShow)) return null;
   if (!showOwner && !showVerified && !showReview) return null;
 
   return (
@@ -70,7 +96,7 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
                 aria-label={t('verification.owner')}
                 value={owner}
                 disabled={save.isPending}
-                onChange={(event) => save.mutate({ owner: event.target.value === '' ? null : event.target.value })}
+                onChange={(event) => save.mutate({ body: { owner: event.target.value === '' ? null : event.target.value } })}
                 className={FIELD}
               >
                 <option value="">{t('verification.noOwner')}</option>
@@ -82,7 +108,7 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
                 ))}
               </select>
             ) : (
-              <span className="break-words px-1.5 py-0.5 text-neutral-700 dark:text-neutral-300">@{owner}</span>
+              <span className="break-words px-1.5 py-0.5 text-neutral-700 dark:text-neutral-300">{owner ? `@${owner}` : '—'}</span>
             )}
           </div>
           <div />
@@ -97,8 +123,8 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
             {editable && (
               <button
                 type="button"
-                disabled={save.isPending}
-                onClick={() => save.mutate({ markVerified: true })}
+                disabled={save.isPending || needsReview}
+                onClick={() => save.mutate({ body: { markVerified: true }, reviewed: reviewedMarkdown?.() })}
                 className="h-6 rounded-md bg-neutral-900 px-2 text-[12px] font-medium text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
               >
                 {t('verification.mark')}
@@ -119,11 +145,11 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
                 aria-label={t('verification.reviewBy')}
                 value={reviewBy}
                 disabled={save.isPending}
-                onChange={(event) => save.mutate({ reviewBy: event.target.value === '' ? null : event.target.value })}
+                onChange={(event) => save.mutate({ body: { reviewBy: event.target.value === '' ? null : event.target.value } })}
                 className={FIELD}
               />
             ) : (
-              <span className="px-1.5 py-0.5 text-neutral-700 dark:text-neutral-300">{day(reviewBy)}</span>
+              <span className="px-1.5 py-0.5 text-neutral-700 dark:text-neutral-300">{reviewBy ? day(reviewBy) : '—'}</span>
             )}
           </div>
           <div />
@@ -136,6 +162,11 @@ export function VerificationRows({ space, pageId, editable, forceShow }: { space
       {error && (
         <p role="alert" className="px-1.5 py-0.5 text-xs text-red-600 dark:text-red-400">
           {error}
+          {needsReview && <button type="button" className="ml-2 underline" onClick={async () => {
+            await queryClient.refetchQueries({ queryKey: ['page', pageId], exact: true });
+            setNeedsReview(false);
+            setError(null);
+          }}>{t('properties.reload')}</button>}
         </p>
       )}
     </div>

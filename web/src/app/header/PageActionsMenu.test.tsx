@@ -6,7 +6,10 @@
  */
 import { createRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { api } from '../api';
+import type { PagePropertiesPayload } from '../api';
+import { reportRequest } from '../offline/connectivity';
 import { hasOfflineDocument, removeOfflineDocument } from '../offline/savedDocuments';
 import { saveDocumentForOfflineReading } from '../offline/readerAccess';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -29,6 +32,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 function renderMenu(overrides: Partial<PageActionsMenuProps> = {}, account?: string) {
@@ -64,6 +68,37 @@ function renderMenu(overrides: Partial<PageActionsMenuProps> = {}, account?: str
 }
 
 describe('PageActionsMenu', () => {
+  it('enables an opted-out home without changing any stored properties', async () => {
+    const state: PagePropertiesPayload = { properties: {}, etag: null, propertyEtag: null, types: {}, foreign: [], readOnly: [], canEdit: true, wikiProperties: { enabled: false, keys: [] } };
+    vi.spyOn(api, 'getPageProperties').mockResolvedValue(state);
+    const put = vi.spyOn(api, 'updatePageProperties').mockResolvedValue(state);
+    renderMenu({ pagePath: 'README.md' });
+    const row = await screen.findByRole('menuitemcheckbox', { name: /Wiki properties/ });
+    expect(row.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(row);
+    await waitFor(() => expect(put).toHaveBeenCalledWith('p1', { wikiPropertiesEnabled: true, etag: null }));
+  });
+
+  it('does not replay an offline action and waits for a current token after reconnect', async () => {
+    const state: PagePropertiesPayload = { properties: {}, etag: 'a', propertyEtag: 'a', types: {}, foreign: [], readOnly: [], canEdit: true, wikiProperties: { enabled: false, keys: [] } };
+    const get = vi.spyOn(api, 'getPageProperties').mockResolvedValue(state);
+    const put = vi.spyOn(api, 'updatePageProperties').mockResolvedValue(undefined);
+    renderMenu();
+    const row = await screen.findByRole('menuitemcheckbox', { name: /Wiki properties/ });
+    act(() => { reportRequest(false); reportRequest(false); });
+    fireEvent.click(row);
+    expect(row.getAttribute('aria-disabled')).toBe('true');
+    let fresh!: (value: PagePropertiesPayload) => void;
+    get.mockImplementationOnce(() => new Promise(resolve => { fresh = resolve; }));
+    act(() => reportRequest(true));
+    await waitFor(() => expect(fresh).toBeTypeOf('function'));
+    fireEvent.click(row);
+    expect(put).not.toHaveBeenCalled();
+    act(() => fresh({ ...state, propertyEtag: 'b' }));
+    await waitFor(() => expect(row.getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(row);
+    await waitFor(() => expect(put).toHaveBeenCalledWith('p1', { wikiPropertiesEnabled: true, etag: 'b' }));
+  });
   it('a document page: labelled rows, and a surface row closes the menu and asks the header to open it', () => {
     const { onOpen, rows } = renderMenu();
     expect(rows()).toEqual(['Share', 'Star this page', 'History', 'Export…', 'Page access…', 'Compare side by side', 'Start a timer…']);

@@ -311,6 +311,8 @@ export function ReadOnlyValue({ value }: { value: unknown }) {
 
 export interface PropertyRowProps {
   name: string;
+  /** A built-in field has a localized label and remains available after its last value is cleared. */
+  builtInLabel?: string;
   value: unknown;
   type: PropertyType;
   /** The server reports this Folio key's value as one Folio would not write: shown with a badge, never edited. */
@@ -330,7 +332,7 @@ export interface PropertyRowProps {
 }
 
 /** One front matter property: its name, the editor its type calls for (or a read-only view), and a remove button. */
-export function PropertyRow({ name, value, type, foreign, locked, canEdit, draft, folioStatus = true, removedRemotely, onCommit, onRemove, onCancelDraft }: PropertyRowProps) {
+export function PropertyRow({ name, builtInLabel, value, type, foreign, locked, canEdit, draft, folioStatus = true, removedRemotely, onCommit, onRemove, onCancelDraft }: PropertyRowProps) {
   const { t, i18n } = useTranslation('app');
   const readOnly = !canEdit || Boolean(foreign) || Boolean(locked);
   const kind = readOnly ? 'readonly' : editorKindFor(name, type, value, folioStatus);
@@ -352,10 +354,10 @@ export function PropertyRow({ name, value, type, foreign, locked, canEdit, draft
   };
 
   return (
-    <div role="group" aria-label={name} data-property={name} className="group grid grid-cols-[minmax(5rem,9rem)_minmax(0,1fr)_1.5rem] items-start gap-x-3 py-0.5 text-sm">
+    <div role="group" aria-label={builtInLabel ?? name} data-property={name} className="group grid grid-cols-[minmax(5rem,9rem)_minmax(0,1fr)_1.5rem] items-start gap-x-3 py-0.5 text-sm">
       <div className="flex min-w-0 items-center gap-1 px-1.5 py-0.5 text-neutral-500 dark:text-neutral-400" title={`${name} · ${t(`properties.types.${type}`)}`}>
         {locked && <Lock size={11} className="shrink-0 opacity-60" aria-hidden="true" />}
-        <span className="truncate">{name}</span>
+        <span className="truncate">{builtInLabel ?? name}</span>
       </div>
       <div className="min-w-0">
         {kind === 'text' && <TextEditor {...editor} />}
@@ -382,7 +384,7 @@ export function PropertyRow({ name, value, type, foreign, locked, canEdit, draft
         )}
       </div>
       <div>
-        {canEdit && !locked && !foreign && !draft && (
+        {canEdit && !locked && !foreign && !draft && !builtInLabel && (
           <button
             type="button"
             aria-label={t('properties.remove', { name })}

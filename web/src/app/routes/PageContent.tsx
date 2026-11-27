@@ -482,7 +482,7 @@ export function PageContent({ id, embedded = false }: PageContentProps) {
               underTitle={
                 isLocalPage
                   ? undefined
-                  : ({ mode, startEditing }) => (
+                  : ({ mode, startEditing, reviewedMarkdown }) => (
                       <>
                         {/* Under the title, not in the chrome row: the chrome row is hidden in reading mode, and the reader is who this is for. */}
                         {data.verification && data.verification.state !== 'unverified' && (
@@ -491,6 +491,7 @@ export function PageContent({ id, embedded = false }: PageContentProps) {
                           </div>
                         )}
                         <PageTitleProperties
+                          reviewedMarkdown={reviewedMarkdown}
                           pageId={data.id}
                           space={data.space}
                           canEdit={editable && mode !== 'reading'}

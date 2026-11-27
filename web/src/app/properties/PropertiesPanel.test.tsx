@@ -5,6 +5,7 @@
  * 409 reload prompt. The network is a fetch stub keyed by method + URL.
  */
 import { useState } from 'react';
+import { createHash, webcrypto } from 'node:crypto';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -363,12 +364,12 @@ describe('PagePropertiesPopover (tables, forms, boards, files)', () => {
 describe('PageTitleProperties (under the page title)', () => {
   const EMPTY: PagePropertiesResponse = { ...BASE, properties: { id: '01ABC' }, types: { id: 'text' } };
 
-  function renderTitle(props: { canEdit: boolean; onStartEditing?: () => void }) {
+  function renderTitle(props: { canEdit: boolean; onStartEditing?: () => void; reviewedMarkdown?: () => string | undefined }) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
         <ToastProvider>
-          <PageTitleProperties pageId="p1" space="demo" canEdit={props.canEdit} canManageTypes={false} onStartEditing={props.onStartEditing} />
+          <PageTitleProperties pageId="p1" space="demo" canManageTypes={false} {...props} />
         </ToastProvider>
       </QueryClientProvider>,
     );
@@ -442,6 +443,48 @@ describe('PageTitleProperties (under the page title)', () => {
     properties: { id: '01ABC', owner: 'ann', verified: '2026-10-01', review_by: '2026-12-01' },
     types: { id: 'text', owner: 'text', verified: 'date', review_by: 'date' },
   };
+  const wiki: NonNullable<PagePropertiesResponse['wikiProperties']> = { enabled: true, keys: ['owner','verified','review_by','tags'] };
+
+  it('binds verification to the editor text visible at the click, including unflushed changes', async () => {
+    vi.stubGlobal('crypto', webcrypto);
+    const state = {...EMPTY, wikiProperties: wiki};
+    const { puts } = stubVerification(state, null);
+    const snapshot = '# Reviewed\r\nNew body';
+    const reviewedMarkdown = vi.fn(() => snapshot);
+    renderTitle({ canEdit: true, reviewedMarkdown });
+    await userEvent.click(await screen.findByRole('button', {name: 'Mark as verified'}));
+    await waitFor(() => expect(puts).toEqual([{markVerified: true, baseRevision: createHash('sha256').update('# Reviewed\nNew body').digest('hex')}]));
+    expect(reviewedMarkdown).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the four wiki fields on a bare document without writing empty values', async () => {
+    const { calls, puts } = stubVerification({ ...EMPTY, properties: {}, wikiProperties: wiki, propertyEtag: null }, null);
+    renderTitle({ canEdit: false });
+    const toggle = await screen.findByRole('button', { name: 'Properties (4)' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    for (const key of wiki.keys) expect(document.querySelectorAll(`[data-property="${key}"]`)).toHaveLength(1);
+    await userEvent.click(toggle);
+    expect(document.querySelector('[data-property="owner"]')).toBeNull();
+    cleanup();
+    renderTitle({ canEdit: false });
+    expect((await screen.findByRole('button', { name: 'Properties (4)' })).getAttribute('aria-expanded')).toBe('false');
+    expect(calls.filter(c => c.method === 'PUT')).toHaveLength(0);
+    expect(puts).toHaveLength(0);
+  });
+
+  it('hides disabled wiki fields without dropping stored values when editing an unrelated property', async () => {
+    const properties = { owner: 'a', tags: ['b'], folio_wiki_properties: 'disabled', project: 'x' };
+    const { calls } = stubVerification({ ...EMPTY, properties, wikiProperties: { enabled: false, keys: [] } }, null);
+    renderTitle({ canEdit: true });
+    await openToggle('Properties (1)');
+    expect(document.querySelector('[data-property="owner"]')).toBeNull();
+    expect(document.querySelector('[data-property="tags"]')).toBeNull();
+    expect(document.querySelector('[data-property="folio_wiki_properties"]')).toBeNull();
+    const input = screen.getByRole('textbox', { name: 'project' });
+    await userEvent.clear(input);
+    await userEvent.type(input, 'y{Enter}');
+    await waitFor(() => expect(calls.find(c => c.method === 'PUT')?.body).toMatchObject({ properties: {...properties, project: 'y'} }));
+  });
   const VERIFICATION = { state: 'verified', owner: 'ann', verified: '2026-10-01', reviewBy: '2026-12-01' };
 
   it('reading mode shows owner, verified and review values without fields or the button, and counts them once', async () => {
