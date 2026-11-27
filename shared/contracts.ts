@@ -1225,6 +1225,27 @@ export interface UploadAssetResponse {
   path?: string;
 }
 
+export interface McpUploadFileInput {
+  name: string;
+  size: number;
+  sha256: string;
+}
+
+export interface McpUploadTarget {
+  name: string;
+  size: number;
+  sha256: string;
+  url: string;
+  expiresAt: string;
+}
+
+export interface McpUploadResult {
+  sha256: string;
+  size: number;
+  url: string;
+  path?: string;
+}
+
 /** GET /api/access/matrix — users × spaces grid backing the Access page, §6.2. */
 export interface AccessMatrixUser {
   id: string;
