@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, computeVerification, parseDay, parseOwner } from './verification.js';
+import { addDays, computeVerification, parseDay, parseOwner, wikiPropertiesFor } from './verification.js';
+
+it('offers only documents the four wiki fields unless their file explicitly disables them', () => {
+  const enabled = { enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] };
+  expect(wikiPropertiesFor('doc', {})).toEqual(enabled);
+  expect(wikiPropertiesFor('doc', { folio_wiki_properties: 'foreign' })).toEqual(enabled);
+  expect(wikiPropertiesFor('doc', { folio_wiki_properties: 'disabled' })).toEqual({ enabled: false, keys: [] });
+  expect(wikiPropertiesFor('table', {})).toBeUndefined();
+});
 
 const NOW = new Date('2026-11-09T12:00:00Z');
 

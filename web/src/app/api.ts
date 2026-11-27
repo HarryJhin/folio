@@ -299,7 +299,7 @@ function artifactBody(fields: Partial<ArtifactPublishBody>, file?: File): BodyIn
   return body;
 }
 
-async function request<T>(input: string, init?: RequestInit, offlineAccount?: string): Promise<T> {
+async function request<T>(input: string, init?: RequestInit, offlineAccount?: string, allowRetry = true): Promise<T> {
   if (offlineAccount !== undefined) {
     init = { ...init, cache: 'no-store', redirect: 'error', headers: { ...init?.headers, [OFFLINE_READER_ACCOUNT_HEADER]: offlineAccount } };
   }
@@ -311,7 +311,7 @@ async function request<T>(input: string, init?: RequestInit, offlineAccount?: st
   // Retry only idempotent methods (a retried POST could create a duplicate)
   // with a replayable body (a FormData body may have already been consumed
   // by the failed attempt's upload stream).
-  const retryEligible = IDEMPOTENT_METHODS.has((init?.method ?? 'GET').toUpperCase()) && !isFormData;
+  const retryEligible = allowRetry && IDEMPOTENT_METHODS.has((init?.method ?? 'GET').toUpperCase()) && !isFormData;
 
   let res: Response;
   let attempt = 0;
@@ -761,7 +761,7 @@ export const api = {
 
   /** PUT /api/pages/:id/verification — editor+: the owner, the review date and "Mark as verified" (shared/verification.ts). */
   updateVerification: (id: string, body: UpdateVerificationBody) =>
-    request<VerificationResponse>(`/api/pages/${encodeURIComponent(id)}/verification`, { method: 'PUT', body: JSON.stringify(body) }),
+    request<VerificationResponse>(`/api/pages/${encodeURIComponent(id)}/verification`, { method: 'PUT', body: JSON.stringify(body) }, undefined, !body.markVerified),
 
   /** GET /api/pages/:id/properties — viewer+. */
   getPageProperties: (id: string) => request<PagePropertiesPayload>(`/api/pages/${encodeURIComponent(id)}/properties`),
@@ -771,7 +771,7 @@ export const api = {
    * 409 = the front matter changed since `etag` was read. The answer is the page's new state (same shape as the GET) when the server sends it.
    */
   updatePageProperties: (id: string, body: UpdatePagePropertiesBody) =>
-    request<PagePropertiesPayload | undefined>(`/api/pages/${encodeURIComponent(id)}/properties`, { method: 'PUT', body: JSON.stringify(body) }),
+    request<PagePropertiesPayload | undefined>(`/api/pages/${encodeURIComponent(id)}/properties`, { method: 'PUT', body: JSON.stringify(body) }, undefined, body.wikiPropertiesEnabled === undefined),
 
   /** GET /api/spaces/:space/property-types — viewer+; the space's typed keys, where they came from, and every key seen in its front matter. */
   getSpacePropertyTypes: (space: string) =>

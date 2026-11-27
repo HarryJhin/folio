@@ -16,6 +16,7 @@ import * as storage from './storage.js';
 import { starterTemplates } from './starterTemplates.js';
 import { todayDateStamp } from './templateVars.js';
 import { readPageProperties } from './properties.js';
+import { registerPropertiesRoutes } from './propertiesRoutes.js';
 
 async function propsOf(id: string): Promise<{ properties: Record<string, unknown> }> {
   return readPageProperties(await storage.requireEntry(id), true);
@@ -32,6 +33,7 @@ async function buildApp(): Promise<FastifyInstance> {
   await app.register(async (protectedScope) => {
     protectedScope.addHook('onRequest', session.requireSession);
     registerRoutes(protectedScope);
+    registerPropertiesRoutes(protectedScope);
   });
   await app.ready();
   return app;
@@ -118,6 +120,23 @@ describe('page templates (real PG + real files, fastify inject)', () => {
     expect((await post('/api/pages/from-template', { templateId: tpl.id, space, parentPath: '' }, viewerCookie)).statusCode).toBe(403);
     expect((await post('/api/pages/from-template', { templateId: tpl.id, space: 'nope', parentPath: '' })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await post('/api/pages/from-template', { templateId: '01ARZ3NDEKTSV4RRFFQ69G5FAV', space, parentPath: '' })).statusCode).toBe(404);
+  });
+
+  it('carries a template’s wiki switch to the copy through a move and a rescan', async () => {
+    const tpl = await storage.createPage({ space, parentPath: '_templates', title: 'Wiki policy', kind: 'doc' });
+    const before = (await get(`/api/pages/${tpl.id}/properties`)).json();
+    const disabled = await app.inject({ method: 'PUT', url: `/api/pages/${tpl.id}/properties`, headers: { cookie: editorCookie },
+      payload: { etag: before.propertyEtag, wikiPropertiesEnabled: false } });
+    expect(disabled.statusCode).toBe(200);
+    const copy = await post('/api/pages/from-template', { templateId: tpl.id, space, parentPath: '', title: 'Wiki copy' });
+    expect(copy.statusCode).toBe(201);
+    const id = copy.json().id;
+    await storage.movePage(id, 'work');
+    await storage.scanSpace(space);
+    const meta = (await get(`/api/pages/${id}/meta`, viewerCookie)).json();
+    expect(meta.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect(meta.properties.folio_wiki_properties).toBe('disabled');
+    expect((await get(`/api/pages/${id}`, viewerCookie)).json().wikiProperties).toEqual(meta.wikiProperties);
   });
 
   it('make-template: copies the page (with or without children) into _templates, title kept', async () => {

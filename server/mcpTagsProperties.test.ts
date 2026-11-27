@@ -535,4 +535,63 @@ describe('MCP tags, properties and bases (real PG + git)', () => {
       expect(Number(await git('rev-list', '--count', 'HEAD'))).toBe(commits + 1);
     });
   });
+
+  it('keeps indexed JSON dates on fresh metadata reads and returns a token only for the file it read', async () => {
+    const { id } = await storage.createPage({ space: slug, parentPath: '', title: 'Metadata dates', kind: 'doc' });
+    const { absPath } = await storage.requireEntry(id);
+    const original = await fs.readFile(absPath, 'utf8');
+    const raw = original.replace('---\n', '---\ndue: 2026-10-01\nchecked: 2026-10-01T20:05:10+09:00\nquoted: "2026-10-01"\n');
+    await fs.writeFile(absPath, raw);
+    await storage.scanSpace(slug);
+    const metadata = () => call(as(viewer), 'get_page_metadata', { id }).then(r => ok(r));
+    const first = await metadata();
+    expect(first.properties).toMatchObject({ due: '2026-10-01T00:00:00.000Z', checked: '2026-10-01T11:05:10.000Z', quoted: '2026-10-01' });
+    expect(first.propertyEtag).toEqual(expect.any(String));
+    await fs.rename(absPath, absPath + '.away');
+    try {
+      const cached = await metadata();
+      expect(cached.properties).toEqual(first.properties);
+      expect(cached).not.toHaveProperty('propertyEtag');
+    } finally {
+      await fs.rename(absPath + '.away', absPath);
+    }
+    await fs.writeFile(absPath, raw.replace('due: 2026-10-01', 'due: 2026-10-02'));
+    const fresh = await metadata();
+    expect(fresh.properties.due).toBe('2026-10-02T00:00:00.000Z');
+    expect(fresh.propertyEtag).not.toEqual(first.propertyEtag);
+    const args = { id, wikiPropertiesEnabled: false };
+    expect((await call(as(editor), 'set_page_properties', { ...args, etag: first.propertyEtag })).isError).toBe(true);
+    expect(ok(await call(as(editor), 'set_page_properties', { ...args, etag: fresh.propertyEtag })).wikiProperties.enabled).toBe(false);
+  });
+
+  it('reads default fields and switches them without replacing other document properties', async () => {
+    const created = await storage.createPage({ space: slug, parentPath: '', title: 'Wiki fields', kind: 'doc' });
+    const id = created.id;
+    const pathOnDisk = (await storage.requireEntry(id)).absPath;
+    const original = await fs.readFile(pathOnDisk, 'utf8');
+    const detail = ok(await call(as(editor), 'read_page', { id }));
+    const metadata = ok(await call(as(editor), 'get_page_metadata', { id }));
+    expect(detail.wikiProperties).toEqual({ enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] });
+    expect(metadata.wikiProperties).toEqual(detail.wikiProperties);
+    expect(metadata.propertyEtag).toEqual(expect.any(String));
+    expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+    expect((await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: false, merge: true })).isError).toBe(true);
+    const disable = { id, wikiPropertiesEnabled: false, etag: metadata.propertyEtag };
+    expect((await call(as(editor, ['read']), 'set_page_properties', disable)).isError).toBe(true);
+    await query("UPDATE spaces SET agent_write_mode = 'review' WHERE slug = $1", [slug]);
+    try {
+      expect((await call(as(editor), 'set_page_properties', disable)).isError).toBe(true);
+      expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+    } finally {
+      await query("UPDATE spaces SET agent_write_mode = 'direct' WHERE slug = $1", [slug]);
+    }
+    const off = ok(await call(as(editor), 'set_page_properties', disable));
+    expect(off.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect(off.properties).toEqual({ ...metadata.properties, folio_wiki_properties: 'disabled' });
+    expect(ok(await call(as(viewer), 'read_page', { id })).wikiProperties).toEqual(off.wikiProperties);
+    expect((await call(as(viewer), 'set_page_properties', { id, wikiPropertiesEnabled: true, etag: off.propertyEtag })).isError).toBe(true);
+    const on = ok(await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: true, merge: true, etag: off.propertyEtag }));
+    expect(on.properties).toEqual(metadata.properties);
+    expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+  });
 });

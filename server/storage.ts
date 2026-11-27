@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto';
  * listTemplates().
  */
 import * as fs from 'node:fs/promises';
+import { readFileSync, renameSync } from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { PoolClient } from 'pg';
@@ -44,8 +45,8 @@ import { docIndexText, docIndexTextAsync } from './indexText.js';
 import { CANVAS_MAX_BYTES, canvasSearchText, parseJsonCanvas } from '../shared/canvas/index.js';
 import { inlineMarkdownToPlainText } from '../shared/inlineText.js';
 import { docExtOf, isMdxPath, isStrongIndexName, stripDocExt } from '../shared/mdx.js';
-import { computeVerification, hasVerificationProps, pickVerificationProps, VERIFICATION_KEYS, type VerificationProps } from '../shared/verification.js';
-import { carryFrontmatterKeys, mergeFrontmatter, writeFrontmatterKeys, type FolioFrontmatter, type FrontmatterKeyEdit } from './frontmatter.js';
+import { computeVerification, hasVerificationProps, pickVerificationProps, VERIFICATION_KEYS, wikiPropertiesFor, WIKI_PROPERTIES_MARKER, type VerificationProps } from '../shared/verification.js';
+import { carryFrontmatterKeys, mergeFrontmatter, readFrontmatterBlock, writeFrontmatterKeys, type FolioFrontmatter, type FrontmatterKeyEdit } from './frontmatter.js';
 import * as propsSidecar from './propsSidecar.js';
 import { ownProperties, reservedKeysOf } from './reservedPropertyKeys.js';
 import * as spaceFiles from './spaceFiles.js';
@@ -107,6 +108,7 @@ export interface PageIndexEntry {
   canvasDoc?: CanvasDocument;
   /** Owner / verified / review_by as the index row holds them - set by rowToEntry only, for toPageMeta's verification state. */
   verificationProps?: VerificationProps;
+  wikiPropertiesDisabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -434,20 +436,29 @@ export async function removeOrphanTempFile(abs: string): Promise<void> {
  * the same directory (rename is atomic only within a filesystem), is dot-named
  * and not `.md`, so no scan indexes it, and is removed if anything fails.
  */
-export async function writeFileAtomic(abs: string, content: string | Buffer): Promise<void> {
+export async function writeFileAtomic(abs: string, content: string | Buffer, options?: { preserveTimes?: boolean; beforePublish?: () => void }): Promise<void> {
   const tmp = path.join(path.dirname(abs), `.${path.basename(abs)}.${process.pid}.${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.tmp`);
   // git.ts excludes this shape from every `git add -A` (ATOMIC_TEMP_PATHSPEC).
   try {
     // The replaced file keeps its mode: a doc committed as 100755 used to come
     // back 100644 from any write, a diff in git for nothing anyone did.
-    const mode = await fs.stat(abs).then(
-      (s) => s.mode & 0o7777,
-      () => undefined,
-    );
+    const stat = await fs.stat(abs).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return undefined;
+    });
     if (typeof content === 'string') await fs.writeFile(tmp, content, 'utf8');
     else await fs.writeFile(tmp, content); // bytes of a pdf/office file: no encoding
-    if (mode !== undefined) await fs.chmod(tmp, mode);
-    await fs.rename(tmp, abs);
+    if (stat) {
+      await fs.chmod(tmp, stat.mode & 0o7777);
+      if (options?.preserveTimes) await fs.utimes(tmp, stat.atimeMs / 1000, stat.mtimeMs / 1000);
+    }
+    if (options?.beforePublish) {
+      // A Yjs update can arrive at any await. Validate and publish in the same event-loop turn.
+      options.beforePublish();
+      renameSync(tmp, abs);
+    } else {
+      await fs.rename(tmp, abs);
+    }
   } catch (err) {
     await fs.rm(tmp, { force: true }).catch(() => undefined);
     throw err;
@@ -696,7 +707,7 @@ interface PagesIndexRow {
   frontmatter?: unknown;
 }
 
-const ENTRY_VERIFICATION_FRONTMATTER = VERIFICATION_KEYS.map((key) => `CASE
+const ENTRY_VERIFICATION_FRONTMATTER = [...VERIFICATION_KEYS, WIKI_PROPERTIES_MARKER].map((key) => `CASE
   WHEN frontmatter->'${key}' IS NULL THEN '{}'::jsonb
   ELSE jsonb_build_object('${key}', frontmatter->'${key}')
 END`).join(' || ');
@@ -708,6 +719,7 @@ function rowToEntry(row: PagesIndexRow): PageIndexEntry {
   const relPath = row.path;
   const verificationProps = pickVerificationProps(row.frontmatter);
   return {
+    ...(wikiPropertiesFor(row.kind, row.frontmatter)?.enabled === false ? { wikiPropertiesDisabled: true } : {}),
     ...(hasVerificationProps(verificationProps) ? { verificationProps } : {}),
     id: row.id,
     space: row.space_slug,
@@ -2352,7 +2364,7 @@ export function toPageMeta(e: PageIndexEntry): PageMeta {
   const meta: PageMeta = { id: e.id, space: e.space, path: e.relPath, kind: e.kind, title: e.title, order, status: e.status, updatedAt: e.updatedAt };
   if (e.icon) meta.icon = e.icon;
   if (e.cover) meta.cover = e.cover;
-  const verification = e.verificationProps ? computeVerification(e.verificationProps, e.updatedAt) : null;
+  const verification = !e.wikiPropertiesDisabled && e.verificationProps ? computeVerification(e.verificationProps, e.updatedAt) : null;
   if (verification) meta.verification = verification;
   return meta;
 }
@@ -3843,17 +3855,40 @@ export async function withDocFileLock<T>(id: string, fn: () => Promise<T>): Prom
 export async function rewriteDocFrontmatter(
   id: string,
   rewrite: (raw: string, entry: PageIndexEntry) => string | null | Promise<string | null>,
+  options?: { preserveContentTime?: () => boolean; baseRevision?: string },
 ): Promise<{ entry: PageIndexEntry; written: boolean }> {
-  return withDocFileLock(id, async () => {
+  const write = (checkRevision?: (diskBody: string) => void) => withDocFileLock(id, async () => {
     const entry = await requireEntry(id);
     if (entry.kind !== 'doc') throw badRequest('page is not a document');
     const raw = await fs.readFile(entry.absPath, 'utf8');
     const next = await rewrite(raw, entry);
-    if (next === null || next === raw) return { entry, written: false };
-    await writeFileAtomic(entry.absPath, next);
+    const diskBody = checkRevision ? matter(raw, {}).content : '';
+    const beforePublish = checkRevision && (() => {
+      // A Git checkout can have replaced the file without touching the live room.
+      const current = readFileSync(entry.absPath, 'utf8');
+      if (current !== raw) {
+        const parsed = readFrontmatterBlock(current);
+        if (parsed.parseable) checkRevision(matter(current, {}).content);
+        throw conflict('the document properties changed during verification; read the page again');
+      }
+      checkRevision(diskBody);
+    });
+    if (next === null || next === raw) {
+      beforePublish?.();
+      return { entry, written: false };
+    }
+    checkRevision?.(diskBody);
+    const preserveContentTime = options?.preserveContentTime?.();
+    await writeFileAtomic(entry.absPath, next, { preserveTimes: preserveContentTime, beforePublish });
     // Options bypass gray-matter's per-input cache (and its half-parsed entry when YAML throws).
     const parsed = matter(next, {});
     const data = parsed.data as Record<string, unknown>;
+    if (preserveContentTime) {
+      // Only owner, dates or the mode changed. Keep the text, its index and updated_at in place:
+      // a live body change may have already advanced them since this metadata request began.
+      await query('UPDATE pages_index SET frontmatter = $2::jsonb WHERE id = $1', [id, pageIndex.frontmatterJson(data)]);
+      return { entry, written: true };
+    }
     const order = numericOrder(data.order);
     const status = validStatus(data.status);
     const icon = validStringField(data.icon);
@@ -3868,6 +3903,9 @@ export async function rewriteDocFrontmatter(
     await patchEntryContent(entry, parsed.content);
     return { entry, written: true };
   });
+  if (options?.baseRevision === undefined) return write();
+  const { withReviewedBody } = await import('./collab.js');
+  return withReviewedBody(id, options.baseRevision, write);
 }
 
 /**
@@ -4165,15 +4203,19 @@ async function mkdirParents(dirAbs: string): Promise<void> {
   }
 }
 
-export async function readFreshDocBody(id: string): Promise<string> {
-  const entry = await requireEntry(id);
+export async function readFreshDocument(entry: PageIndexEntry): Promise<{ markdown: string; frontmatter: Record<string, unknown> }> {
   if (entry.kind !== 'doc') throw badRequest('page is not a document');
   // The index row can outlive the file for a moment (a concurrent move/delete): that is a missing page, not a server fault.
   const raw = await fs.readFile(entry.absPath, 'utf8').catch((err: NodeJS.ErrnoException) => {
     if (err.code === 'ENOENT') throw notFound('page');
     throw err;
   });
-  return matter(raw).content;
+  const parsed = matter(raw, {});
+  return { markdown: parsed.content, frontmatter: parsed.data };
+}
+
+export async function readFreshDocBody(id: string): Promise<string> {
+  return (await readFreshDocument(await requireEntry(id))).markdown;
 }
 
 export async function readBoardSvg(id: string): Promise<string> {

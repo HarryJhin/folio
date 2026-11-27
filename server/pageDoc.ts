@@ -6,6 +6,7 @@
  * only reads content.
  */
 import type { PageDoc } from '../shared/contracts.js';
+import { computeVerification, pickVerificationProps, wikiPropertiesFor, WIKI_PROPERTIES_MARKER } from '../shared/verification.js';
 import * as storage from './storage.js';
 import type { PageIndexEntry } from './storage.js';
 import * as collab from './collab.js';
@@ -22,9 +23,18 @@ export async function buildPageDoc(entry: PageIndexEntry, reader: CanvasReader =
   const meta = storage.toPageMeta(entry);
   if (entry.kind === 'doc') {
     // A live collaboration room is authoritative over the file (the debounced write may be behind).
-    const markdown = collab.isDocLive(entry.id) ? (collab.getLiveText(entry.id) ?? entry.body ?? '') : await storage.readFreshDocBody(entry.id);
-    const revision = collab.bodyRevision(markdown);
-    return storage.isLightFootprintSpace(entry.space) ? { ...meta, markdown, bodyRevision: revision, lightFootprint: true } : { ...meta, markdown, bodyRevision: revision };
+    const file = await storage.readFreshDocument(entry).catch(error => {
+      if (!collab.isDocLive(entry.id)) throw error;
+      return undefined;
+    });
+    const markdown = collab.getLiveText(entry.id) ?? file?.markdown ?? entry.body ?? '';
+    const stored = file?.frontmatter ?? { ...entry.verificationProps, [WIKI_PROPERTIES_MARKER]: entry.wikiPropertiesDisabled ? 'disabled' : undefined };
+    const wikiProperties = wikiPropertiesFor('doc', stored)!;
+    const verification = wikiProperties.enabled ? computeVerification(pickVerificationProps(stored), entry.updatedAt) : null;
+    return {
+      ...meta, markdown, bodyRevision: collab.bodyRevision(markdown), wikiProperties, verification: verification ?? undefined,
+      ...(storage.isLightFootprintSpace(entry.space) ? { lightFootprint: true as const } : {}),
+    };
   }
   // Round 26: a table's content rides these routes as `markdown` (the whole
   // .table.md, schema included) — PageDoc is deliberately NOT extended for tables.

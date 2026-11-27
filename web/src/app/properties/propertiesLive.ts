@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import type { PageDoc } from '@shared/contracts';
 import type { PagePropertiesPayload } from '../api';
 
 /**
@@ -90,6 +91,7 @@ export interface PagePropertiesFrame {
 export function applyPagePropertiesFrame(queryClient: QueryClient, event: PagePropertiesFrame): void {
   if (typeof event.space !== 'string' || !event.space) return;
   lastClient = queryClient;
+  void queryClient.invalidateQueries({ queryKey: ['tree', event.space] });
   requestBaseRefresh(queryClient, event.space);
   if (typeof event.pageId === 'string' && event.pageId) {
     const pageId = event.pageId;
@@ -101,18 +103,26 @@ export function applyPagePropertiesFrame(queryClient: QueryClient, event: PagePr
     else refreshPage(queryClient, pageId);
     return;
   }
-  // Many pages of the space: every properties panel on screen re-reads (the key carries no space; only active queries refetch).
-  for (const query of queryClient.getQueryCache().findAll({ queryKey: ['page-properties'] })) {
-    const pageId = query.queryKey[1];
-    if (typeof pageId !== 'string') continue;
+  // Badges can be cached without a properties panel. A panel alone has no space
+  // in its payload, so keep refreshing it even if the page was never loaded.
+  const pages = new Set<string>();
+  for (const query of queryClient.getQueryCache().getAll()) {
+    const [kind, pageId] = query.queryKey;
+    if ((kind !== 'page' && kind !== 'page-properties') || typeof pageId !== 'string') continue;
+    const page = queryClient.getQueryData<PageDoc>(['page', pageId]);
+    if (page?.space === event.space || (!page?.space && kind === 'page-properties')) pages.add(pageId);
+  }
+  for (const pageId of pages) {
     if (saving.has(pageId)) deferred.add(pageId);
-    else void queryClient.invalidateQueries({ queryKey: propertiesKey(pageId) });
+    else refreshPage(queryClient, pageId);
   }
 }
 
 /** The socket came back after a break: whatever is open may have changed meanwhile. */
 export function refreshAllPageProperties(queryClient: QueryClient): void {
   void queryClient.invalidateQueries({ queryKey: ['page-properties'] });
+  void queryClient.invalidateQueries({ queryKey: ['page'] });
+  void queryClient.invalidateQueries({ queryKey: ['tree'] });
   void queryClient.invalidateQueries({ queryKey: ['base'] });
 }
 

@@ -139,6 +139,7 @@ export interface PageEditorProps {
 
 export interface UnderTitleContext {
   mode: EditorMode;
+  reviewedMarkdown: () => string | undefined;
   /** Switches to Live edit; absent when the page is read-only for this person. */
   startEditing?: () => void;
 }
@@ -308,7 +309,14 @@ export function PageEditor({
   }, [hasUnderTitle, mode, readingSlot]);
   const underTitleNode =
     typeof underTitle === 'function'
-      ? underTitle({ mode, startEditing: readOnly ? undefined : () => selectMode('live') })
+      ? underTitle({
+          mode, startEditing: readOnly ? undefined : () => selectMode('live'),
+          reviewedMarkdown: () => {
+            if (mode === 'reading') return markdown;
+            const content = rootRef.current?.querySelector<HTMLElement>('.cm-content');
+            return content ? EditorView.findFromDOM(content)?.state.doc.toString() : undefined;
+          },
+        })
       : underTitle;
 
   const editor = (

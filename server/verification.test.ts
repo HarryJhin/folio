@@ -4,19 +4,36 @@
  * path as the properties panel, survive a rescan, reach agents through
  * toPageMeta, and drive the weekly review_due reminder.
  */
+import { createRequire } from 'node:module';
 import * as fs from 'node:fs/promises';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import WebSocket from 'ws';
+import * as Y from 'yjs';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseBaseConfig } from '../shared/bases/parse.js';
 import type { User } from '../shared/contracts.js';
 import { userViewer } from './accessSql.js';
 import { queryBase } from './bases/query.js';
 import * as authStore from './auth/store.js';
-import { query } from './db/pool.js';
+import { newListenClient, query } from './db/pool.js';
 import { deleteTestSpace, setUpTestSchema } from './db/testSchema.js';
+import { writeFrontmatterKeys } from './frontmatter.js';
 import { listNotifications } from './notifications/routes.js';
 import { readDeclaredTypes } from './propertyTypes.js';
 import * as storage from './storage.js';
+import * as collab from './collab.js';
+import * as dispatch from './notifications/dispatch.js';
+import { PROPERTIES_SIGNAL_CHANNEL } from './propertiesSignal.js';
 import { countRecentReviewReminders, runReviewReminders, updateVerification } from './verification.js';
+
+const liveDocs = (createRequire(import.meta.url)('y-websocket/bin/utils') as { docs: Map<string, Y.Doc> }).docs;
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...fs, chmod: vi.fn(fs.chmod) };
+});
 
 describe('page verification (real PG + git)', () => {
   let teardownSchema: () => Promise<void>;
@@ -44,6 +61,7 @@ describe('page verification (real PG + git)', () => {
   });
 
   const newPage = async (title: string) => (await storage.createPage({ space: slug, parentPath: '', title, kind: 'doc' })).id;
+  const revisionOf = async (id: string) => collab.bodyRevision(await storage.readFreshDocBody(id));
   const verificationOf = async (id: string) => storage.toPageMeta(await storage.requireEntry(id)).verification;
   const writeProps = async (id: string, patch: Record<string, string>) => {
     const entry = await storage.requireEntry(id);
@@ -56,7 +74,7 @@ describe('page verification (real PG + git)', () => {
 
   it('mark as verified: the three properties land in the file, the types are declared, and a rescan keeps the state', async () => {
     const id = await newPage('Marked');
-    const result = await updateVerification(await storage.requireEntry(id), editor, { owner: owner.username!, markVerified: true });
+    const result = await updateVerification(await storage.requireEntry(id), editor, { owner: owner.username!, markVerified: true, baseRevision: await revisionOf(id) });
     expect(result.written).toBe(true);
     expect(result.verification).toMatchObject({ state: 'verified', owner: owner.username });
 
@@ -82,17 +100,17 @@ describe('page verification (real PG + git)', () => {
 
   it('the default period is 90 days, and a later mark keeps a period the page already had', async () => {
     const id = await newPage('Period');
-    const first = await updateVerification(await storage.requireEntry(id), editor, { markVerified: true }, new Date('2026-11-09T10:00:00Z'));
+    const first = await updateVerification(await storage.requireEntry(id), editor, { markVerified: true, baseRevision: await revisionOf(id) }, new Date('2026-11-09T10:00:00Z'));
     expect(first.verification?.reviewBy).toBe('2027-02-07');
     await updateVerification(await storage.requireEntry(id), editor, { reviewBy: '2026-12-09' }, new Date('2026-11-09T10:00:00Z'));
-    const second = await updateVerification(await storage.requireEntry(id), editor, { markVerified: true }, new Date('2026-12-01T10:00:00Z'));
+    const second = await updateVerification(await storage.requireEntry(id), editor, { markVerified: true, baseRevision: await revisionOf(id) }, new Date('2026-12-01T10:00:00Z'));
     // 30 days between the first mark and the chosen deadline: the next deadline is 30 days after the new mark.
     expect(second.verification?.reviewBy).toBe('2026-12-31');
   });
 
   it('after the mark the page is verified, after a text edit it is changed; changing the owner or the deadline is not an edit', async () => {
     const id = await newPage('Edited');
-    await updateVerification(await storage.requireEntry(id), editor, { markVerified: true });
+    await updateVerification(await storage.requireEntry(id), editor, { markVerified: true, baseRevision: await revisionOf(id) });
     expect((await verificationOf(id))?.state).toBe('verified');
 
     await updateVerification(await storage.requireEntry(id), editor, { owner: owner.username!, reviewBy: '2027-05-05' });
@@ -107,9 +125,164 @@ describe('page verification (real PG + git)', () => {
     expect((await verificationOf(id))?.state).toBe('changed');
 
     // Marking again confirms the new text.
-    await updateVerification(await storage.requireEntry(id), editor, { markVerified: true });
+    await updateVerification(await storage.requireEntry(id), editor, { markVerified: true, baseRevision: await revisionOf(id) });
     expect((await verificationOf(id))?.state).toBe('verified');
   }, 20_000);
+
+  it('requires the reviewed revision and rejects a stale body or disabled page without changing either date', async () => {
+    const id = await newPage('Preconditions');
+    const entry = await storage.requireEntry(id);
+    const revision = await revisionOf(id);
+    await expect(updateVerification(entry, editor, { markVerified: true })).rejects.toMatchObject({ status: 428 });
+    await storage.writeDocBody(id, '# New body\n');
+    const raw = await fs.readFile(entry.absPath, 'utf8');
+    await expect(updateVerification(entry, editor, { owner: owner.username!, markVerified: true, baseRevision: revision })).rejects.toMatchObject({ status: 409, code: 'revision_conflict' });
+    expect(await fs.readFile(entry.absPath, 'utf8')).toBe(raw);
+    await writeProps(id, { folio_wiki_properties: 'disabled', review_by: '2000-01-01' });
+    await expect(updateVerification(entry, editor, { markVerified: true, baseRevision: await revisionOf(id) })).rejects.toMatchObject({ status: 409 });
+    expect(await verificationOf(id)).toBeUndefined();
+    expect(storage.toPageMeta((await storage.listEntryMetadata(slug)).find(p => p.id === id)!).verification).toBeUndefined();
+  });
+
+  it('refuses an unflushed live edit and an edit arriving while a verification file is staged', async () => {
+    const id = await newPage('Guarded stamp');
+    const entry = await storage.requireEntry(id);
+    const body = await storage.readFreshDocBody(id);
+    const revision = collab.bodyRevision(body);
+    const raw = await fs.readFile(entry.absPath, 'utf8');
+    const room = new Y.Doc();
+    const text = room.getText('content');
+    text.insert(0, body + 'edit');
+    liveDocs.set(id, room);
+    try {
+      await expect(updateVerification(entry, editor, { markVerified: true, baseRevision: revision })).rejects.toMatchObject({ status: 409 });
+      text.delete(body.length, 4);
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(fs.chmod).mockImplementationOnce(async (path, mode) => {
+        await actual.chmod(path, mode);
+        text.insert(text.length, 'another edit');
+      });
+      await expect(updateVerification(entry, editor, { markVerified: true, baseRevision: revision })).rejects.toMatchObject({ status: 409 });
+      expect(await fs.readFile(entry.absPath, 'utf8')).toBe(raw);
+      expect((await fs.readdir(storage.getSpaceDir(slug))).filter(name => name.endsWith('.tmp'))).toEqual([]);
+    } finally {
+      liveDocs.delete(id);
+      room.destroy();
+    }
+  });
+
+  it('waits for a closing room to persist its last edit and rejects the staged stamp without an audit or a properties signal', async () => {
+    const id = await newPage('Closing room');
+    const entry = await storage.requireEntry(id);
+    const body = await storage.readFreshDocBody(id);
+    const edit = 'Last edit before disconnect.\n';
+    const revision = collab.bodyRevision(body);
+    const session = await authStore.createSession(editor.id);
+    const server = createServer();
+    collab.initCollab();
+    collab.attachToServer(server);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/collab/${id}`, { headers: { cookie: `folio_session=${session.token}` } });
+    const connected = once(socket, 'message');
+    const listener = newListenClient();
+    const signals: string[] = [];
+    listener.on('notification', event => {
+      if (event.channel === PROPERTIES_SIGNAL_CHANNEL && JSON.parse(event.payload!).id === id) signals.push(event.payload!);
+    });
+    try {
+      await connected; // The first sync frame follows the completed seed and registration of this socket.
+      await listener.connect();
+      await listener.query(`LISTEN ${PROPERTIES_SIGNAL_CHANNEL}`);
+      const roomText = liveDocs.get(id)!.getText('content');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(fs.chmod).mockImplementationOnce(async (path, mode) => {
+        await actual.chmod(path, mode);
+        roomText.insert(roomText.length, edit);
+        socket.close();
+        // The last socket evicts the room immediately. Its pending flush needs the lock held by verification.
+        await vi.waitFor(() => expect(collab.isDocLive(id)).toBe(false));
+      });
+      await expect(updateVerification(entry, editor, { owner: owner.username!, markVerified: true, baseRevision: revision }))
+        .rejects.toMatchObject({ status: 409, code: 'revision_conflict', currentRevision: collab.bodyRevision(body + edit) });
+      expect(await storage.readFreshDocBody(id)).toBe(body + edit);
+      expect(await fs.readFile(entry.absPath, 'utf8')).not.toMatch(/^(?:owner|verified|review_by):/m);
+      expect(await verificationOf(id)).toBeUndefined();
+      expect(await query("SELECT 1 FROM audit_log WHERE action = 'page.properties' AND target = $1", [id])).toEqual([]);
+      await listener.query('SELECT 1'); // Drain notifications committed through the end of the rejected request.
+      expect(signals).toHaveLength(0);
+      const current = await updateVerification(entry, editor, { markVerified: true, baseRevision: await revisionOf(id) });
+      expect(current.written).toBe(true);
+      await vi.waitFor(() => expect(signals).toHaveLength(1));
+    } finally {
+      socket.terminate();
+      await listener.end();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('keeps table verification and weekly reminders working without a document revision', async () => {
+    const { id } = await storage.createPage({ space: slug, parentPath: '', title: 'Review table', kind: 'table' });
+    const entry = await storage.requireEntry(id);
+    const result = await updateVerification(entry, editor, { owner: owner.username!, markVerified: true, reviewBy: '2000-01-01' });
+    expect(result).toMatchObject({ written: true, verification: { owner: owner.username, state: 'overdue' } });
+    await runReviewReminders();
+    await runReviewReminders();
+    const feed = (await listNotifications(owner)).items.filter(n => n.kind === 'review_due' && n.pageId === id);
+    expect(feed).toHaveLength(1);
+    expect(feed[0].payload).toMatchObject({ reviewBy: '2000-01-01' });
+  });
+
+  it('checks current file eligibility inside the page lock before inserting a reminder', async () => {
+    const id = await newPage('Pending reminder');
+    await writeProps(id, { owner: owner.username!, review_by: '2000-01-01' });
+    const lock = storage.withDocFileLock;
+    let switched = false;
+    const spy = vi.spyOn(storage, 'withDocFileLock').mockImplementation(async (pageId, fn) => {
+      if (pageId === id && !switched) {
+        switched = true;
+        await storage.rewriteDocFrontmatter(id, raw => raw.replace('---\n', '---\nfolio_wiki_properties: disabled\n'));
+      }
+      return lock(pageId, fn);
+    });
+    const delivery = vi.spyOn(dispatch, 'deliverToPage');
+    try {
+      await runReviewReminders();
+      expect(switched).toBe(true);
+      expect(delivery.mock.calls.some(call => call[2] === id)).toBe(false);
+      expect(await countRecentReviewReminders(id)).toBe(0);
+    } finally {
+      spy.mockRestore();
+      delivery.mockRestore();
+    }
+    await storage.rewriteDocFrontmatter(id, raw => raw.replace('folio_wiki_properties: disabled\n', ''));
+    await runReviewReminders();
+    await storage.rewriteDocFrontmatter(id, raw => raw.replace('---\n', '---\nfolio_wiki_properties: disabled\n'));
+    await runReviewReminders();
+    expect(await countRecentReviewReminders(id)).toBe(1);
+  });
+
+  it('skips archived documents and templates, and falls back to an admin when the owner loses access', async () => {
+    const archived = await newPage('Archived review');
+    const template = (await storage.createPage({ space: slug, parentPath: '_templates', title: 'Review template', kind: 'doc' })).id;
+    const revoked = await newPage('Former owner access');
+    await authStore.setMembership(slug, outsider.id, 'viewer');
+    const due = { owner: outsider.username!, review_by: '2000-01-01' };
+    await writeProps(archived, due);
+    await writeProps(template, due);
+    await writeProps(revoked, due);
+    await authStore.removeMembership(slug, outsider.id);
+    // The index still lists this document as eligible. The current file has been archived.
+    const { absPath } = await storage.requireEntry(archived);
+    const raw = await fs.readFile(absPath, 'utf8');
+    await fs.writeFile(absPath, writeFrontmatterKeys(raw, new Map([['status', { set: 'archived' }]])));
+    await runReviewReminders();
+    expect(await countRecentReviewReminders(archived)).toBe(0);
+    expect(await countRecentReviewReminders(template)).toBe(0);
+    expect(await countRecentReviewReminders(revoked)).toBe(1);
+    expect((await listNotifications(admin)).items.find(n => n.pageId === revoked)).toMatchObject({ payload: { toAdmins: true } });
+    expect((await listNotifications(outsider)).items.some(n => n.pageId === revoked)).toBe(false);
+  });
 
   it('refuses an owner that does not exist and a bad deadline, writing nothing', async () => {
     const id = await newPage('Refused');

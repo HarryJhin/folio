@@ -6,6 +6,14 @@ update rather than appended to, so there is no history to dig through.
 
 Version: **0.4.5**.
 
+Record changes integrated into `custom` in the [fork changelog](../CHANGELOG-CUSTOM.md), with the commit or pull request for each entry.
+
+An absent `folio_wiki_properties` key enables the four document fields.
+Reads derive the field list. Only the page switch writes the opt-out marker.
+To mark a document verified, send the revision of the displayed body to
+`PUT /api/pages/:id/verification` as `baseRevision`. A missing revision
+returns 428 and a stale revision returns 409. See the [design and acceptance cases](design/2026-11-27-default-wiki-properties.md).
+
 The sidebar and folder listing read the same decoded repository path from folder URLs. Use `folioLinkNavPath` to link to a directory so each filename is encoded exactly once.
 
 Guest artifact URLs under `/art/guest/` recheck the current share or publication for each file. Proxies can route guest GET and HEAD requests there without forwarding credentials. Directly shared forms use `POST /api/share/:token/forms/:id/submit`. Published and nested forms remain read-only for guests.

@@ -57,7 +57,7 @@
  *    is written in place under `labels:`, and on a page whose only list is
  *    `labels:` a `tags` sent alone (the panel's tags row, built from `labels:`)
  *    is written in place under `labels:` too. A `labels` the file does not have
- *    is written as `tags:`. Tags lose a leading `#`, empty ones and duplicates.
+ *    is written as `tags:`. New tags lose a leading `#`, empty ones and duplicates. Retained tags keep their spelling.
  *  - every other key: sent and different -> set (in place; a new key is appended
  *    to the block in the order of `properties`); sent and equal -> untouched,
  *    the file's own spelling kept; not sent -> removed. `null` writes `key:`, an
@@ -73,7 +73,7 @@
  * `page.properties` with the changed keys.
  */
 import { createHash } from 'node:crypto';
-import { VERIFICATION_KEYS } from '../shared/verification.js';
+import { VERIFICATION_KEYS, WIKI_PROPERTIES_MARKER, wikiPropertiesFor } from '../shared/verification.js';
 import fs from 'node:fs/promises';
 import type { PageKind, PagePropertiesResponse, PropertyType, UpdatePagePropertiesBody, User } from '../shared/contracts.js';
 import { recordAudit } from './audit.js';
@@ -81,6 +81,7 @@ import { query, queryOne } from './db/pool.js';
 import { badRequest, HttpError } from './errors.js';
 import {
   folioCouldHaveWritten,
+  FrontmatterFormattingError,
   parsedEntry,
   readFrontmatterBlock,
   renderFrontmatterEntry,
@@ -188,16 +189,26 @@ function coerce(value: unknown, type: PropertyType): unknown {
   return value;
 }
 
-/** Tags as written: no leading `#`, no empty ones, no duplicates. A string is split on commas and whitespace. */
-function normalizeTags(value: unknown): unknown {
+/** Preserve retained entries and normalize newly supplied tags. A string is split on commas and whitespace. */
+function normalizeTags(value: unknown, original?: unknown): unknown {
   if (value === null) return null;
   const items = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,]+/) : null;
   if (items === null) throw badRequest('tags must be a list of strings');
+  const existing = Array.isArray(original) ? original : typeof original === 'string' ? original.split(/[\s,]+/) : [];
+  const remaining = new Map<string, number>();
+  for (const entry of existing) if (typeof entry === 'string') remaining.set(entry, (remaining.get(entry) ?? 0) + 1);
+  const seen = new Set<string>();
   const out: string[] = [];
   for (const item of items) {
     if (typeof item !== 'string' && typeof item !== 'number') throw badRequest('tags must be a list of strings');
     const tag = String(item).trim().replace(/^#+/, '').trim();
-    if (tag && !out.includes(tag)) out.push(tag);
+    const retained = typeof item === 'string' ? remaining.get(item) ?? 0 : 0;
+    if (!tag || (!retained && seen.has(tag))) continue;
+    seen.add(tag);
+    if (typeof item === 'string' && retained) {
+      out.push(item);
+      remaining.set(item, retained - 1);
+    } else out.push(tag);
   }
   return out;
 }
@@ -308,9 +319,11 @@ const NO_PROPERTIES = (readOnly: string[]): PagePropertiesResponse => ({ propert
 /** What the index last saw, read-only (the file cannot be read right now). */
 async function indexedResponse(entry: PageIndexEntry, declared: Record<string, PropertyType>, readOnly: string[]): Promise<PagePropertiesResponse> {
   const row = await queryOne<{ frontmatter: Record<string, unknown> | null }>('SELECT frontmatter FROM pages_index WHERE id = $1', [entry.id]);
-  const properties = row?.frontmatter && typeof row.frontmatter === 'object' ? row.frontmatter : {};
+  const properties = row?.frontmatter && typeof row.frontmatter === 'object' && !Array.isArray(row.frontmatter) ? row.frontmatter : {};
   const foreign = entry.kind === 'doc' ? foreignFolioKeys(properties, entry.id, { plainStatus: statusIsPlain(entry) }) : [];
-  return { properties, types: effectiveTypes(declared, properties), foreign, readOnly, canEdit: false, etag: null, folioKeys: folioKeysOf(entry) };
+  return { properties, types: effectiveTypes(declared, properties), foreign, readOnly, canEdit: false, etag: null, folioKeys: folioKeysOf(entry),
+    ...(entry.kind === 'doc' ? { wikiProperties: wikiPropertiesFor('doc', properties) } : {}),
+  };
 }
 
 /** The file a page's properties are read from right now: the page file (doc, table, form) or its sidecar. */
@@ -367,13 +380,16 @@ async function responseFor(entry: PageIndexEntry, source: PropertiesSource, role
     return { properties, types: effectiveTypes(declared, properties), foreign: [], readOnly, canEdit: roleCanEdit && block.parseable, etag: ownEtag(properties), folioKeys: [] };
   }
   const properties = toClientValue(block.data) as Record<string, unknown>;
+  const etag = frontmatterEtag(block.text);
   return {
     properties,
     types: effectiveTypes(declared, properties),
     foreign: foreignFolioKeys(block.data, entry.id, { plainStatus: statusIsPlain(entry) }),
     readOnly,
     canEdit: roleCanEdit && block.parseable,
-    etag: frontmatterEtag(block.text),
+    etag,
+    wikiProperties: wikiPropertiesFor(entry.kind, properties),
+    ...(block.parseable ? { propertyEtag: etag } : {}),
     folioKeys: folioKeysOf(entry),
   };
 }
@@ -416,20 +432,23 @@ export function planPropertyEdits(
   const valueKeys = folioKeys ? folioValueKeys(options.plainStatus === true) : [];
   const valueKeySet: ReadonlySet<string> = new Set(valueKeys);
   const client = toClientValue(current) as Record<string, unknown>;
+  if (folioKeys) checkWikiMarkerEcho(current, sent);
   const present = (key: string) => hasOwn(current, key);
+  // Metadata serializes YAML dates as ISO instants, while the properties panel displays date-only values at midnight.
+  const changed = (key: string, value: unknown) => !present(key) || !(same(client[key], value) || same(current[key], value));
   const sentHas = (key: string) => hasOwn(sent, key) && sent[key] !== undefined;
   const edits = new Map<string, FrontmatterKeyEdit>();
   const remove = (key: string) => {
     if (present(key)) edits.set(key, { remove: true });
   };
   const setUnlessSame = (key: string, value: unknown, lines?: string[]) => {
-    if (present(key) && same(client[key], value)) return;
+    if (!changed(key, value)) return;
     edits.set(key, lines ? { set: value, lines } : { set: value });
   };
 
   for (const key of Object.keys(sent)) {
     assertKey(key);
-    if (sent[key] !== undefined) assertValue(key, sent[key]);
+    if (sent[key] !== undefined && !(folioKeys && key === WIKI_PROPERTIES_MARKER)) assertValue(key, sent[key]);
   }
 
   // id: immutable.
@@ -440,7 +459,7 @@ export function planPropertyEdits(
     if (sentHas(key)) {
       const value = sent[key];
       if (value === null) remove(key);
-      else if (!(present(key) && same(client[key], value))) setUnlessSame(key, folioValue(key, value));
+      else if (changed(key, value)) setUnlessSame(key, folioValue(key, value));
     } else if (present(key) && folioCouldHaveWritten(key, current[key])) {
       remove(key); // a foreign value stays unless the client names the key
     }
@@ -448,20 +467,18 @@ export function planPropertyEdits(
 
   // tags and its synonym `labels:` (owner's rule: Folio writes `tags:` for new tags,
   // never deletes or migrates an existing `labels:`).
-  const changed = (key: string, value: unknown) => !(present(key) && same(client[key], value));
   if (sentHas('tags')) {
     // A page whose only list is `labels:` shows it as its tags row (web toDisplayProperties),
     // so an edited row comes back as `tags` alone: it is written in place under `labels:`.
     const target = !present('tags') && present('labels') && !sentHas('labels') ? 'labels' : 'tags';
-    const value = normalizeTags(sent.tags);
-    if (changed(target, sent.tags)) setUnlessSame(target, value);
+    if (changed(target, sent.tags)) setUnlessSame(target, normalizeTags(sent.tags, client[target]));
   } else if (!(sentHas('labels') && !present('labels'))) {
     remove('tags');
   }
   if (sentHas('labels')) {
-    if (sent.labels === null && present('labels')) remove('labels');
+    if (sent.labels === null && present('labels') && changed('labels', null)) remove('labels');
     else if (present('labels')) {
-      if (changed('labels', sent.labels)) setUnlessSame('labels', normalizeTags(sent.labels));
+      if (changed('labels', sent.labels)) setUnlessSame('labels', normalizeTags(sent.labels, client.labels));
     } else if (sent.labels !== null) {
       // No `labels:` in the file: new tags are written as `tags:` (joined to the sent tags, if any).
       const extra = normalizeTags(sent.labels) as string[];
@@ -473,7 +490,7 @@ export function planPropertyEdits(
   // `labels` not sent: kept as the file has it (never removed by omission).
 
   // Everything else: the file's keys first (kept or removed), then the new ones in the order they were sent.
-  const special = (key: string) => key === 'tags' || key === 'labels' || (folioKeys && (key === 'id' || valueKeySet.has(key)));
+  const special = (key: string) => key === 'tags' || key === 'labels' || (folioKeys && (key === 'id' || key === WIKI_PROPERTIES_MARKER || valueKeySet.has(key)));
   const keys = [...Object.keys(current), ...Object.keys(sent).filter((k) => !present(k))];
   for (const key of keys) {
     if (special(key)) continue;
@@ -482,7 +499,7 @@ export function planPropertyEdits(
       continue;
     }
     const raw = sent[key];
-    if (present(key) && same(client[key], raw)) continue;
+    if (!changed(key, raw)) continue;
     const type = declared[key] ?? inferPropertyType(key, present(key) ? client[key] : raw);
     const value = coerce(raw, type);
     setUnlessSame(key, value, dateLines(key, value, type));
@@ -504,6 +521,26 @@ export interface PropertiesWriteResult {
   keys: string[];
 }
 
+function checkWikiMarkerEcho(current: Record<string, unknown>, sent: Record<string, unknown>): void {
+  if (!hasOwn(sent, WIKI_PROPERTIES_MARKER)) return;
+  const value = current[WIKI_PROPERTIES_MARKER];
+  const echo = sent[WIKI_PROPERTIES_MARKER];
+  if (hasOwn(current, WIKI_PROPERTIES_MARKER) && (same(value, echo) || same(toClientValue(value), echo))) return;
+  throw badRequest('use wikiPropertiesEnabled to change the wiki properties setting');
+}
+
+function setWikiMode(current: Record<string, unknown>, enabled: boolean, edits: Map<string, FrontmatterKeyEdit>): void {
+  const present = hasOwn(current, WIKI_PROPERTIES_MARKER);
+  if (present && current[WIKI_PROPERTIES_MARKER] !== 'disabled') {
+    throw new HttpError(409, 'the file uses folio_wiki_properties for another value; the wiki properties setting cannot be changed', 'wiki_properties_collision');
+  }
+  if (enabled && present) edits.set(WIKI_PROPERTIES_MARKER, { remove: true });
+  if (!enabled && !present) edits.set(WIKI_PROPERTIES_MARKER, { set: 'disabled' });
+}
+
+const contentTimeKeys: ReadonlySet<string> = new Set([...VERIFICATION_KEYS, WIKI_PROPERTIES_MARKER]);
+type PropertyMapBody = UpdatePagePropertiesBody & { properties: Record<string, unknown> };
+
 /** A key of the table's / form's own definition sent as a property: refused, never written. */
 export function assertNoReservedKey(kind: PageKind, sent: Record<string, unknown>): void {
   const reserved = reservedKeysOf(kind);
@@ -517,13 +554,22 @@ export function assertNoReservedKey(kind: PageKind, sent: Record<string, unknown
  * `actor` is who a sidecar's commit is attributed to (a document's / table's / form's file rides the debounced
  * auto-commit like any page save).
  */
-export async function updatePageProperties(pageId: string, body: UpdatePagePropertiesBody, roleCanEdit: boolean, actor?: GitIdentity): Promise<PropertiesWriteResult> {
+export async function updatePageProperties(pageId: string, body: UpdatePagePropertiesBody, roleCanEdit: boolean, actor?: GitIdentity, baseRevision?: string): Promise<PropertiesWriteResult> {
   const entry = await storage.requireEntry(pageId);
   const store = propertiesStoreOf(entry.kind);
   if (store === 'none') throw badRequest('this page has no properties');
-  if (store === 'embedded') return updateEmbeddedProperties(entry, body, roleCanEdit);
-  if (store === 'sidecar') return updateSidecarProperties(entry, body, roleCanEdit, actor ?? { name: 'Folio', email: 'folio@localhost' });
-  if (store === 'manifest') return updateManifestProperties(entry, body, roleCanEdit);
+  if (body.wikiPropertiesEnabled !== undefined) {
+    if (entry.kind !== 'doc') throw badRequest('only documents have a wiki properties setting');
+    if (body.etag === undefined) throw new HttpError(428, 'read the current document properties and supply etag to change the wiki properties setting', 'property_etag_required');
+  } else if (body.properties === undefined) {
+    throw badRequest('provide properties or wikiPropertiesEnabled');
+  }
+  if (store !== 'frontmatter') {
+    const withMap = { ...body, properties: body.properties! };
+    if (store === 'embedded') return updateEmbeddedProperties(entry, withMap, roleCanEdit);
+    if (store === 'sidecar') return updateSidecarProperties(entry, withMap, roleCanEdit, actor ?? { name: 'Folio', email: 'folio@localhost' });
+    return updateManifestProperties(entry, withMap, roleCanEdit);
+  }
 
   let keys: string[] = [];
   const { entry: written_entry, written } = await storage.rewriteDocFrontmatter(pageId, async (raw, current) => {
@@ -532,22 +578,33 @@ export async function updatePageProperties(pageId: string, body: UpdatePagePrope
     if (body.etag !== undefined && body.etag !== frontmatterEtag(block.text)) {
       throw new PropertiesConflictError(await responseFor(current, { raw }, roleCanEdit));
     }
-    const declared = (await readDeclaredTypes(current.space)).types;
-    const edits = planPropertyEdits(block.data, body.properties, declared, { plainStatus: statusIsPlain(current) });
+    if (baseRevision !== undefined && !wikiPropertiesFor('doc', block.data)?.enabled) {
+      throw new HttpError(409, 'wiki properties are disabled on this page', 'wiki_properties_disabled');
+    }
+    const edits = body.properties === undefined
+      ? new Map<string, FrontmatterKeyEdit>()
+      : planPropertyEdits(block.data, body.properties, (await readDeclaredTypes(current.space)).types, { plainStatus: statusIsPlain(current) });
+    if (body.wikiPropertiesEnabled !== undefined) setWikiMode(block.data, body.wikiPropertiesEnabled, edits);
     keys = [...edits.keys()];
     if (edits.size === 0) return null;
     try {
-      return writeFrontmatterKeys(raw, edits);
+      return writeFrontmatterKeys(raw, edits, body.wikiPropertiesEnabled !== undefined || hasOwn(block.data, WIKI_PROPERTIES_MARKER));
     } catch (err) {
       if (err instanceof UnparseableFrontmatterError) throw badRequest('the front matter of this page cannot be parsed; fix it in the file first');
+      if (err instanceof FrontmatterFormattingError) throw badRequest(err.message);
       throw err;
     }
+  }, { baseRevision, preserveContentTime: () => keys.every(key => contentTimeKeys.has(key)) }).catch((error: NodeJS.ErrnoException) => {
+    if ((body.wikiPropertiesEnabled !== undefined || baseRevision !== undefined) && error.path === entry.absPath && error.syscall === 'open') {
+      throw new HttpError(409, 'the document file cannot be read; reload its properties before changing them', 'wiki_properties_unavailable');
+    }
+    throw error;
   });
   return { response: await readPageProperties(written_entry, roleCanEdit), written, keys: written ? keys : [] };
 }
 
 /** A table / form: the page's own keys of its block, the reserved ones untouched byte for byte. */
-async function updateEmbeddedProperties(entry: PageIndexEntry, body: UpdatePagePropertiesBody, roleCanEdit: boolean): Promise<PropertiesWriteResult> {
+async function updateEmbeddedProperties(entry: PageIndexEntry, body: PropertyMapBody, roleCanEdit: boolean): Promise<PropertiesWriteResult> {
   assertNoReservedKey(entry.kind, body.properties);
   let keys: string[] = [];
   let own: Record<string, unknown> = {};
@@ -576,7 +633,7 @@ async function updateEmbeddedProperties(entry: PageIndexEntry, body: UpdatePageP
 }
 
 /** A board / PDF / Office page: its `.folio/<path>.props.yaml`, one commit of that file. */
-async function updateSidecarProperties(entry: PageIndexEntry, body: UpdatePagePropertiesBody, roleCanEdit: boolean, actor: GitIdentity): Promise<PropertiesWriteResult> {
+async function updateSidecarProperties(entry: PageIndexEntry, body: PropertyMapBody, roleCanEdit: boolean, actor: GitIdentity): Promise<PropertiesWriteResult> {
   let keys: string[] = [];
   let data: Record<string, unknown> = {};
   const written = await writeFolioFile(entry.space, actor, `${entry.relPath}${SIDECAR_SUFFIX}`, async (current) => {
@@ -605,7 +662,7 @@ async function updateSidecarProperties(entry: PageIndexEntry, body: UpdatePagePr
 }
 
 /** An artifact: the non-reserved keys of its artifact.yaml (made when the bundle has none), every other byte kept. */
-async function updateManifestProperties(entry: PageIndexEntry, body: UpdatePagePropertiesBody, roleCanEdit: boolean): Promise<PropertiesWriteResult> {
+async function updateManifestProperties(entry: PageIndexEntry, body: PropertyMapBody, roleCanEdit: boolean): Promise<PropertiesWriteResult> {
   const reserved = Object.keys(body.properties).find((k) => isReservedArtifactKey(k));
   if (reserved !== undefined) throw badRequest(`${JSON.stringify(reserved)} is reserved by Folio in artifact.yaml`);
   let keys: string[] = [];
@@ -665,19 +722,19 @@ async function restoreStamp(entry: PageIndexEntry, stamp: PageStamp): Promise<vo
  * role and the token scope): records the editor, writes, nudges the debounced auto-commit and audits the changed keys.
  * Throws PropertiesConflictError (409) on an etag mismatch and a 400 HttpError for a refused value or key.
  */
-export async function savePageProperties(entry: PageIndexEntry, user: Pick<User, 'id' | 'name' | 'email'>, body: UpdatePagePropertiesBody, audit: Record<string, unknown> = {}): Promise<PropertiesWriteResult> {
+export async function savePageProperties(entry: PageIndexEntry, user: Pick<User, 'id' | 'name' | 'email'>, body: UpdatePagePropertiesBody, audit: Record<string, unknown> = {}, baseRevision?: string): Promise<PropertiesWriteResult> {
   if (propertiesStoreOf(entry.kind) === 'none') throw badRequest('this page has no properties');
-  gitSync.recordEditor(entry.space, { name: user.name, email: user.email });
   // A board's / file's sidecar is committed by the write itself (attributed to the caller); a document's,
   // table's or form's file rides the debounced auto-commit like any page save.
-  const before = await stampOf(entry);
-  const result = await updatePageProperties(entry.id, body, true, { name: user.name, email: user.email });
+  const before = entry.kind === 'doc' ? null : await stampOf(entry);
+  const result = await updatePageProperties(entry.id, body, true, { name: user.name, email: user.email }, baseRevision);
   // Confirming a page (or changing its owner / deadline) is not an edit of its text: keep updated_at where it was,
   // or the page would show "changed after verification" the moment it was verified.
   if (result.written && before && result.keys.length > 0 && result.keys.every((k) => (VERIFICATION_KEYS as readonly string[]).includes(k))) {
     await restoreStamp(entry, before);
   }
   if (result.written) {
+    gitSync.recordEditor(entry.space, { name: user.name, email: user.email });
     gitSync.noteActivity(entry.space);
     recordAudit(user.id, 'page.properties', entry.id, { keys: result.keys, ...audit });
   }
@@ -698,7 +755,8 @@ export function mergePropertyPatch(kind: PageKind, current: Record<string, unkno
   const merged: Record<string, unknown> = { ...current };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if (value === null) delete merged[key];
+    // Preserve even a null marker for the immutable-echo check against the original YAML under the write lock.
+    if (value === null && !(kind === 'doc' && key === WIKI_PROPERTIES_MARKER)) delete merged[key];
     else merged[key] = value;
   }
   if (hasOwn(patch, 'tags') && patch.tags !== null && !hasOwn(patch, 'labels') && !hasOwn(current, 'tags') && hasOwn(current, 'labels')) delete merged.labels;

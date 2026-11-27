@@ -45,6 +45,20 @@ describe('tags', () => {
 });
 
 describe('labels: as a synonym of tags:', () => {
+  it('edits a single wiki tag row without migrating or normalizing surviving source entries', () => {
+    const original = { tags: ['API', 'shared'], labels: ['legacy', '#Shared'] };
+    const display = toDisplayProperties(original, true);
+    expect(display).toEqual({ tags: ['api', 'shared', 'legacy'] });
+    expect(toWireProperties({ ...display, title: 'B' }, original, true)).toEqual({ ...original, title: 'B' });
+    expect(toWireProperties({ tags: ['api', 'legacy', 'new'] }, original, true))
+      .toEqual({ tags: ['API', 'new'], labels: ['legacy'] });
+    expect(toWireProperties({ tags: [] }, original, true)).toEqual({ tags: [], labels: [] });
+    expect(toWireProperties({ tags: ['new'] }, { labels: [] }, true)).toEqual({ labels: ['new'] });
+    const foreign = { tags: ['api'], labels: { team: 'legacy' } };
+    const foreignDisplay = toDisplayProperties(foreign, true);
+    expect(foreignDisplay.tags).toEqual(foreign);
+    expect(toWireProperties({ ...foreignDisplay, project: 'x' }, foreign, true)).toEqual({ ...foreign, project: 'x' });
+  });
   it('shows labels as the tags row and writes them back untouched until the row is edited', () => {
     const original = { title: 'T', labels: ['a', 'b'] };
     const display = toDisplayProperties(original);

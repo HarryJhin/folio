@@ -27,6 +27,20 @@ export const OWNER_KEY = 'owner';
 export const VERIFIED_KEY = 'verified';
 export const REVIEW_BY_KEY = 'review_by';
 export const VERIFICATION_KEYS = [OWNER_KEY, VERIFIED_KEY, REVIEW_BY_KEY] as const;
+export const WIKI_PROPERTY_KEYS = [...VERIFICATION_KEYS, 'tags'] as const;
+export const WIKI_PROPERTIES_MARKER = 'folio_wiki_properties';
+
+export interface WikiProperties {
+  enabled: boolean;
+  keys: Array<(typeof WIKI_PROPERTY_KEYS)[number]>;
+}
+
+export function wikiPropertiesFor(kind: string, frontmatter: unknown): WikiProperties | undefined {
+  if (kind !== 'doc') return undefined;
+  const disabled = typeof frontmatter === 'object' && frontmatter !== null &&
+    WIKI_PROPERTIES_MARKER in frontmatter && frontmatter[WIKI_PROPERTIES_MARKER] === 'disabled';
+  return { enabled: !disabled, keys: disabled ? [] : [...WIKI_PROPERTY_KEYS] };
+}
 
 /** The review period a "Mark as verified" click sets, in days. */
 export const DEFAULT_REVIEW_DAYS = 90;

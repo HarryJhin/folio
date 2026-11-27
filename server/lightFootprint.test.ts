@@ -30,6 +30,7 @@ import { translitSlug } from './translit.js';
 import { readSpaceExportSettings, writeSpaceExportSettings } from './export/spaceSettings.js';
 import type { User } from '../shared/contracts.js';
 import { buildPageDoc } from './pageDoc.js';
+import { readPageProperties, savePageProperties } from './properties.js';
 
 git.__allowLocalRepoPathsForTests();
 const execFileAsync = promisify(execFile);
@@ -170,6 +171,41 @@ describe('light footprint for rootPath spaces (real PG + git)', () => {
     expect((await idsByPath(slug)).get(created.path)).toBe(created.id);
     expect((await storage.getEntry(introId))?.relPath).toBe('intro.md');
   }, 60_000);
+
+  it('reads four virtual fields on a bare file without changing Git and restores its bytes after a switch', async () => {
+    const { slug, repo, content } = await connect(`${RUN} Wiki fields`, SEED, 'docs');
+    const id = (await idsByPath(slug)).get('plain.md')!;
+    const entry = await storage.requireEntry(id);
+    const previous = await fs.stat(entry.absPath);
+    const baseline = await gitStatus(repo);
+    for (let read = 0; read < 2; read++) {
+      const props = await readPageProperties(entry, true);
+      expect(props).toMatchObject({ propertyEtag: null, properties: {}, wikiProperties: { enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] } });
+      expect((await buildPageDoc(entry)).verification).toBeUndefined();
+    }
+    expect((await fs.stat(entry.absPath)).mtimeMs).toBe(previous.mtimeMs);
+    expect(await gitStatus(repo)).toBe(baseline);
+    const off = await savePageProperties(entry, admin, { wikiPropertiesEnabled: false, etag: null });
+    expect(off.response.wikiProperties).toEqual({ enabled: false, keys: [] });
+    await storage.scanSpace(slug);
+    expect((await storage.requireEntry(id)).absPath).toBe(entry.absPath);
+    await savePageProperties(entry, admin, { wikiPropertiesEnabled: true, etag: off.response.propertyEtag });
+    expect(await fs.readFile(path.join(content, 'plain.md'), 'utf8')).toBe(SEED['docs/plain.md']);
+    expect(await gitStatus(repo)).toBe(baseline);
+  });
+
+  it('preserves inherited wiki settings after moving and reindexing a light-footprint template copy', async () => {
+    const source = "---\nfolio_wiki_properties: disabled\nlabels: [legacy]\n---\n# Review\n";
+    const { slug } = await connect(`${RUN} Wiki template`, { ...SEED, 'docs/_templates/review.md': source }, 'docs');
+    const template = (await idsByPath(slug)).get('_templates/review.md')!;
+    const copy = await storage.createFromTemplate(template, slug, '', { title: 'Review copy', author: 'Editor' });
+    await storage.movePage(copy.id, 'guide');
+    await storage.scanSpace(slug);
+    const props = await readPageProperties(await storage.requireEntry(copy.id), true);
+    expect(props.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect(props.properties).toEqual({ folio_wiki_properties: 'disabled', labels: ['legacy'] });
+    expect(await fs.readFile((await storage.requireEntry(template)).absPath, 'utf8')).toBe(source);
+  });
 
   it('ids follow a Folio move, a folder move, a slug rename and an external rename', async () => {
     const { slug, content } = await connect(`${RUN} Move`, SEED, 'docs');
