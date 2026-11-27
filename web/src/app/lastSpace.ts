@@ -1,4 +1,4 @@
-import type { SpaceInfo, SpaceList } from '@shared/contracts';
+import type { SpaceInfo } from '@shared/contracts';
 
 export function spaceEntryPath(space: Pick<SpaceInfo, 'slug' | 'firstView'>, hash = ''): string {
   // Existing bookmarks with a heading or block fragment refer to the home document.
@@ -6,19 +6,8 @@ export function spaceEntryPath(space: Pick<SpaceInfo, 'slug' | 'firstView'>, has
   return `/s/${encodeURIComponent(space.slug)}/${view}`;
 }
 
-export function homeSpaces(data?: SpaceList): SpaceInfo[] {
-  return data?.spaces.slice(0, data.primarySpaceCount ?? data.navigationSpaceCount) ?? [];
-}
-
 export function chooseHomeSpace<T extends { slug: string }>(spaces: T[], remembered: string | null, preferred?: string): T | undefined {
   return spaces.find(space => space.slug === remembered) ?? spaces.find(space => space.slug === preferred) ?? spaces[0];
-}
-
-/** A bookmarked bare root removed from navigation opens the preferred home. Deep links stay intact. */
-export function hiddenRootTarget(data: SpaceList, slug: string, remembered: string | null) {
-  if (!data.primarySpaceCount || data.navigationSpaceCount === undefined) return;
-  const index = data.spaces.findIndex(space => space.slug === slug);
-  if (index >= data.navigationSpaceCount) return chooseHomeSpace(homeSpaces(data), remembered, data.defaultSpace);
 }
 
 /**

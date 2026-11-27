@@ -266,13 +266,13 @@ describe('Onboarding — the tour at /welcome, with spaces already there', () =>
   });
 });
 
-it('opens the configured primary space if a bookmark for the root remembers a reference space', async () => {
+it('reopens a remembered accessible space even with cached primary space counts', async () => {
   const spaces = ['first', 'second', 'archive'].map(slug => ({ slug, name: slug, pageCount: 1 }));
   stubFetch({ spaces, primarySpaceCount: 2, defaultSpace: 'second' });
   localStorage.setItem('folio:last-space', 'archive');
   try {
     renderAt('/', <RootRedirect />);
-    expect((await screen.findByTestId('landed')).textContent).toContain('/s/second|');
+    expect((await screen.findByTestId('landed')).textContent).toContain('/s/archive|');
   } finally {
     localStorage.removeItem('folio:last-space');
   }

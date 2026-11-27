@@ -24,7 +24,7 @@ Migration 065 stores the first view per space. Signed-in space entry opens the g
 
 Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.
 
-Operators can curate primary and reference space navigation and supply exact wiki link routes for collections split across branches. The full space list and every resolved destination still use the viewer’s access rights. See [Installation](INSTALL.md#primary-space-navigation).
+The switcher and MCP list every space the viewer can access. Primary and reference lists control their display order. Global document search retains its configured scope and topic priorities. Operators can supply exact wiki link routes for collections split across branches. See [Installation](INSTALL.md#primary-space-navigation).
 
 OIDC token exchange selects the authentication method from the provider's discovery metadata and configured secret. SAML bearer confirmations use the configured ACS address, and SCIM responses honor requested attributes and sub-attributes. See [Installation](INSTALL.md#single-sign-on-openid-connect).
 

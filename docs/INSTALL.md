@@ -835,15 +835,18 @@ docker compose down --volumes
 
 ## Primary space navigation
 
-Set `FOLIO_PRIMARY_SPACES` to a comma-separated list of space slugs, in display order.
-The switcher opens on visible primary spaces. The home route remembers a visible primary
-space or selects the configured `FOLIO_DEFAULT_SPACE` if visible, then the first primary. The switcher's search and **Include reference spaces**
-also reach references. The optional `FOLIO_REFERENCE_SPACES` list limits which spaces
-appear as references. Without it, all other accessible spaces are references. A user with
-no visible primary space lands in an accessible reference. Direct links still follow
-the ordinary permission checks, including for files in spaces outside the navigation lists. A bookmarked bare root outside both lists returns to the preferred home when primary spaces are available.
-When reference navigation is fixed, creating a space opens its bookmarkable first view. Graph is the default; space admins can choose Space home in Space settings. The explicit home URL is `/s/<slug>/home`. The configured switcher order is maintained.
-MCP `list_spaces` uses the same order and accepts `includeAll: true` to include references.
+The switcher and MCP `list_spaces` include every space the caller can access.
+The switcher refreshes the list whenever it opens. Set `FOLIO_PRIMARY_SPACES` and
+`FOLIO_REFERENCE_SPACES` to comma-separated slugs to list primary spaces first,
+references second, and other accessible spaces after them. The switcher shows
+the user's starred spaces at the top. Its search matches names and slugs across
+the full list.
+
+The home route returns to the last accessible space the user visited. On a first
+visit or after access changes, it opens the visible primary space named in
+`FOLIO_DEFAULT_SPACE`, falling back to the first accessible space in list order.
+A direct link to `/s/<slug>` opens that space's configured first view. Graph is
+the default. Space admins can select Space home in Space settings.
 
 Global member searches prioritize primary spaces and honor the reference list. Explicit
 space-scoped searches use the requested space. If a reference contains copies of topic

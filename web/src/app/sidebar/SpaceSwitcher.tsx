@@ -1,8 +1,9 @@
+import type { SpaceInfo } from '@shared/contracts';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Check, ChevronsUpDown, Layers, Plus, Search, Star } from 'lucide-react';
+import { ChevronsUpDown, Plus, Search, Star } from 'lucide-react';
 import { api } from '../api';
 import { isStarred, useStars, useToggleStar } from '../stars';
 import { Menu, MenuItem } from '../ui/Menu';
@@ -20,21 +21,19 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState('');
-  const [showAll, setShowAll] = useState(false);
 
   // Same reasoning as PageTree's ['tree', space] query (see its comment):
   // a space created/renamed/deleted elsewhere should show up here without
   // an F5. Point config, not global — see App.tsx's QueryClient defaults.
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['spaces'],
     queryFn: api.listSpaces,
     refetchOnWindowFocus: true,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
-  const spaces = useMemo(() => data?.spaces.slice(0, data.navigationSpaceCount) ?? [], [data]);
-  const primaryCount = data?.primarySpaceCount;
-  const currentSpace = data?.spaces.find((s) => s.slug === current);
+  const spaces = data?.spaces;
+  const currentSpace = spaces?.find((s) => s.slug === current);
   // Owner (08.09.2026): starred ("pinned") spaces first, the rest below —
   // the list scrolled past 8 rows with no visible cue and looked like spaces
   // were missing. The star per row toggles pinning without closing the menu.
@@ -42,7 +41,7 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
   const toggleStar = useToggleStar();
   const { pinned, others } = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase();
-    if (primaryCount && !showAll && !needle) return { pinned: [], others: spaces.slice(0, primaryCount) };
+    if (!spaces) return { pinned: [], others: [] };
     const visible = needle
       ? spaces.filter((space) =>
           `${space.name} ${space.slug}`.toLocaleLowerCase().includes(needle),
@@ -51,14 +50,14 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
     const pinnedList = visible.filter((space) => isStarred(stars, 'space', space.slug));
     const rest = visible.filter((space) => !isStarred(stars, 'space', space.slug));
     return { pinned: pinnedList, others: rest };
-  }, [search, spaces, stars, showAll, primaryCount]);
+  }, [search, spaces, stars]);
 
   // A row is TWO controls: the MenuItem button (navigate) and the star
   // (pin/unpin). They must be SIBLINGS — a <button> inside a <button> is
   // invalid HTML and React warns about it — so the star sits next to the
   // MenuItem in a flex row, overlaying its right edge.
   // `close` is the Menu render-prop's callback, NOT the global window.close.
-  const renderRow = (space: (typeof spaces)[number], starred: boolean, close: () => void) => (
+  const renderRow = (space: SpaceInfo, starred: boolean, close: () => void) => (
     <div key={space.slug} className="group/space relative flex items-center">
       <div className="min-w-0 flex-1">
         <MenuItem
@@ -100,10 +99,8 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
       <Menu
         triggerLabel={t('sidebar.spaceSwitcher.label')}
         onOpenChange={open => {
-          if (!open) {
-            setSearch('');
-            setShowAll(false);
-          }
+          if (open) void refetch({ cancelRefetch: false });
+          else setSearch('');
         }}
         // min-w-0 alongside flex-1 (not just w-full): a flex item's minimum
         // width defaults to its CONTENT's natural size unless min-w-0 says
@@ -154,8 +151,8 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
               />
             </label>
             <div data-testid="space-switcher-list" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-              {spaces.length === 0 && <div className="px-2.5 py-1.5 text-sm opacity-60">{t('sidebar.spaceSwitcher.noSpaces')}</div>}
-              {spaces.length > 0 && pinned.length === 0 && others.length === 0 && (
+              {!spaces?.length && <div className="px-2.5 py-1.5 text-sm opacity-60">{t('sidebar.spaceSwitcher.noSpaces')}</div>}
+              {!!spaces?.length && pinned.length === 0 && others.length === 0 && (
                 <div className="px-2.5 py-1.5 text-sm opacity-60">{t('sidebar.spaceSwitcher.noMatches')}</div>
               )}
               {pinned.map((space) => renderRow(space, true, close))}
@@ -163,15 +160,6 @@ export function SpaceSwitcher({ current }: SpaceSwitcherProps) {
               {others.map((space) => renderRow(space, isStarred(stars, 'space', space.slug), close))}
             </div>
             <div className="mt-1 border-t border-neutral-200 pt-1 dark:border-neutral-700">
-              {primaryCount !== undefined && primaryCount < spaces.length && (
-                <MenuItem
-                  checked={showAll}
-                  icon={showAll ? <Check size={14} /> : <Layers size={14} />}
-                  onSelect={() => setShowAll(!showAll)}
-                >
-                  {t('sidebar.spaceSwitcher.includeReference')}
-                </MenuItem>
-              )}
               <MenuItem
                 icon={<Plus size={14} />}
                 onSelect={() => {

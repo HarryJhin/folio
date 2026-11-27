@@ -81,6 +81,7 @@ describe('spec-access.md §11.1 — instance-admin without membership, all six p
 
   it('path 2 — does not see the private space in the page tree / space switcher (membershipsFor); DOES see the visibility:instance space', async () => {
     const memberships = await session.membershipsFor(admin);
+    expect(Object.getPrototypeOf(memberships)).toBeNull();
     expect(memberships[privateSpace.slug]).toBeUndefined();
     expect(memberships[instanceSpace.slug]).toBe('viewer');
   });
@@ -148,7 +149,9 @@ describe('spec-access.md §11.1 — instance-admin without membership, all six p
     const disabled = { ...disabledUser, disabled: true };
 
     expect(await session.effectiveRole(disabled, instanceSpace.slug)).toBeUndefined();
-    expect(await session.membershipsFor(disabled)).toEqual({});
+    const memberships = await session.membershipsFor(disabled);
+    expect(Object.getPrototypeOf(memberships)).toBeNull();
+    expect(Object.keys(memberships)).toEqual([]);
   });
 });
 

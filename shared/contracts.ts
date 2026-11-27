@@ -230,12 +230,9 @@ export const searchHitSchema = z.object({
 export type SearchHit = z.infer<typeof searchHitSchema>;
 
 export interface SpaceList {
+  /** Every space the caller may open, in navigation order. */
   spaces: SpaceInfo[];
-  /** When configured, the first N visible spaces are primary navigation destinations. */
-  primarySpaceCount?: number;
-  /** End of the discoverable list when the deployment also curates reference spaces. */
-  navigationSpaceCount?: number;
-  /** Preferred initial destination, present only for a visible primary space. */
+  /** Preferred initial destination, when visible to this caller. */
   defaultSpace?: string;
 }
 
