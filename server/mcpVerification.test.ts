@@ -73,4 +73,21 @@ describe('MCP verification state (real PG)', () => {
     expect(FOLIO_MCP_INSTRUCTIONS).toMatch(/overdue/);
     expect(FOLIO_MCP_INSTRUCTIONS.length).toBeLessThanOrEqual(2048);
   });
+
+  it('fetch and read_page honor an opt-out on disk before a Git rescan', async () => {
+    const id = ids['late.md'];
+    const file = path.join(storage.getSpaceDir(slug), 'late.md');
+    const original = await fs.readFile(file, 'utf8');
+    try {
+      await fs.writeFile(file, original.replace('owner: ann', 'folio_wiki_properties: disabled\nowner: ann'));
+      const page = await call(actor(), 'read_page', { id });
+      expect(page.wikiProperties.enabled).toBe(false);
+      expect(page.verification).toBeUndefined();
+      const fetched = await call(actor(), 'fetch', { id });
+      expect(fetched.text).toBe(page.markdown);
+      expect(fetched.metadata.verification).toBeUndefined();
+    } finally {
+      await fs.writeFile(file, original);
+    }
+  });
 });
