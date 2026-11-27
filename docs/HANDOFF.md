@@ -1082,11 +1082,11 @@ Each of these was a real defect. They are here so that nobody pays twice.
 
 **Languages**
 
-- The interface ships in English and Ukrainian. Which languages a build has
+- The interface ships in Korean, English and Ukrainian. Which languages a build has
   is decided by the bundle files that exist (`web/src/*/i18n/<code>.json`,
   `server/i18n/<code>.json`, `web/src/emoji/keywords/<code>.ts`,
   `web/src/editor/emoji-aliases/<code>.ts`): adding a language means adding
-  files, not editing code.
+  the bundles, enabling the profile language in the contract and database, and mapping any third-party locales.
 - Code, comments, tests and the assistant's prompts are in English. Tests run
   in English; a test that needs Cyrillic text lives in a file of its own.
 

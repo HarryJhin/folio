@@ -1,4 +1,5 @@
 import { getOfflineDocument, listOfflineDocuments, subscribeOfflineDocuments } from '../app/offline/savedDocuments';
+import { DEFAULT_UI_LANGUAGE } from '@shared/uiLanguage';
 import { bundlesFrom } from '../i18n/bundles';
 import { parseDocumentPath, renderReader, type Labels } from './view';
 import './reader.css';
@@ -10,7 +11,7 @@ const root = document.querySelector<HTMLElement>('#reader')!;
 const bundles = bundlesFrom(import.meta.glob('./i18n/*.json', { eager: true, import: 'default' })) as Record<string, Labels>;
 let preference: string | null = null;
 try { preference = localStorage.getItem('folio:lang'); } catch { /* Browser storage may be disabled. */ }
-const lang = [preference, ...navigator.languages, 'en'].map((value) => value?.split('-')[0].toLowerCase())
+const lang = [preference, ...navigator.languages, DEFAULT_UI_LANGUAGE].map((value) => value?.split('-')[0].toLowerCase())
   .map((value) => value === 'ru' ? 'uk' : value).find((value) => value && bundles[value])!;
 document.documentElement.lang = lang;
 const labels = bundles[lang];

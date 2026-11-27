@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import i18next from 'i18next';
 import type { SsoDiscoverResult, SsoProviderPublic } from '@shared/contracts';
 import { api } from '../api';
+import { UI_LANGUAGES } from '../../i18n/languages';
 import { LoginScreen, currentReturnTo, ssoStartUrl } from './LoginScreen';
 
 beforeEach(async () => {
@@ -109,6 +110,14 @@ describe('LoginScreen: single sign-on', () => {
   it('keeps manual sign-in when the configured provider is not enabled', () => {
     renderLogin('retired');
     expect(screen.getByLabelText('Password')).toBeTruthy();
+  });
+
+  it.each(UI_LANGUAGES)('labels the email input in the selected language (%s)', async (lang) => {
+    await i18next.changeLanguage(lang);
+    renderLogin();
+    const label = i18next.getResource(lang, 'app', 'ui.email');
+    expect(label).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: label })).toBeTruthy();
   });
 
   it('shows one button per provider, Google with its own label', () => {

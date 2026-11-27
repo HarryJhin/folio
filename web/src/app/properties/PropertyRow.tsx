@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
+import { formatCalendarValue } from '../formatDate';
 import { useTranslation } from 'react-i18next';
 import { Lock, X } from 'lucide-react';
 import type { PageStatus, PropertyType } from '@shared/contracts';
@@ -330,7 +331,7 @@ export interface PropertyRowProps {
 
 /** One front matter property: its name, the editor its type calls for (or a read-only view), and a remove button. */
 export function PropertyRow({ name, value, type, foreign, locked, canEdit, draft, folioStatus = true, removedRemotely, onCommit, onRemove, onCancelDraft }: PropertyRowProps) {
-  const { t } = useTranslation('app');
+  const { t, i18n } = useTranslation('app');
   const readOnly = !canEdit || Boolean(foreign) || Boolean(locked);
   const kind = readOnly ? 'readonly' : editorKindFor(name, type, value, folioStatus);
 
@@ -366,7 +367,9 @@ export function PropertyRow({ name, value, type, foreign, locked, canEdit, draft
         {removedRemotely && <p role="status" className="px-1.5 pt-0.5 text-xs text-amber-700 dark:text-amber-300">{t('properties.remoteRemoved')}</p>}
         {kind === 'readonly' && (
           <div className="flex flex-wrap items-start gap-2">
-            <ReadOnlyValue value={value} />
+            <ReadOnlyValue value={!foreign && typeof value === 'string' && (type === 'date' || type === 'datetime')
+              ? formatCalendarValue(type === 'date' ? dateInputValue(value) || value : value, i18n.language)
+              : value} />
             {foreign && (
               <span
                 title={t('properties.foreignHint')}

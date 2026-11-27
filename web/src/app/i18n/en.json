@@ -1226,6 +1226,7 @@
     "resumeFailed": "Could not continue the connection. Go back to the app and start it again."
   },
   "ui": {
+    "email": "Email",
     "cancel": "Cancel",
     "confirm": "Confirm",
     "pleaseWait": "Please wait…",

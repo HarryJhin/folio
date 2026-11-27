@@ -1,0 +1,398 @@
+{
+  "mode": {
+    "source": "소스",
+    "live": "실시간 편집",
+    "reading": "읽기",
+    "sourceTitle": "마크다운 원문 편집",
+    "liveTitle": "서식을 확인하며 편집",
+    "readingTitle": "서식이 적용된 페이지 보기",
+    "aria": "편집기 모드",
+    "pick": "현재 모드: {{mode}}. 모드 변경"
+  },
+  "status": {
+    "connected": "연결됨",
+    "connecting": "연결 중",
+    "offline": "오프라인",
+    "title": "공동 편집: {{state}}",
+    "peers": "· 외 {{count}}명",
+    "unsaved": "변경 사항이 저장되지 않음",
+    "unsavedShort": "저장되지 않음",
+    "unsavedHint": "서버에서 아직 최근 변경 사항을 확인하지 못했습니다. 변경 사항은 이 브라우저에 보관되어 있으니 탭을 열어 두세요. 이 상태가 계속되면 페이지 편집 권한을 확인하세요."
+  },
+  "readonly": "읽기 전용",
+  "loadingPage": "페이지 불러오는 중…",
+  "unavailableOffline": "이 기기에서 아직 열어 본 적이 없는 페이지입니다. 인터넷에 연결되면 자동으로 불러옵니다.",
+  "connecting": "연결 중…",
+  "placeholder": "마크다운으로 작성하세요. ‘/’로 블록을 삽입하고 ⌘F로 페이지를 검색할 수 있습니다.",
+  "pagesHeader": "검색할 페이지 이름을 입력하세요",
+  "emptyHint": {
+    "insert": " — 표, 다이어그램, 이미지 등 블록 삽입",
+    "links": " — 페이지 링크      (( — 이모지      :이름 — 이름으로 이모지 찾기",
+    "search": " — 검색 및 이동"
+  },
+  "table": {
+    "addRow": "행",
+    "addRowTitle": "행 추가",
+    "addColumn": "열",
+    "addColumnTitle": "열 추가",
+    "source": "소스",
+    "sourceTitle": "마크다운 원문 보기",
+    "deleteColumn": "열 삭제",
+    "deleteRow": "행 삭제",
+    "headerPlaceholder": "열 {{n}}",
+    "errorMoved": "표가 변경되어 편집 내용을 적용하지 못했습니다",
+    "errorParse": "표를 해석할 수 없어 편집 내용을 적용하지 못했습니다",
+    "columnMenu": "{{n}}번째 열 메뉴",
+    "rowMenu": "{{n}}번째 행 메뉴",
+    "cellMenu": "셀 메뉴",
+    "insertColumnHere": "여기에 열 삽입",
+    "insertRowHere": "여기에 행 삽입",
+    "insertColumnBefore": "왼쪽에 열 삽입",
+    "insertColumnAfter": "오른쪽에 열 삽입",
+    "insertRowAbove": "위에 행 삽입",
+    "insertRowBelow": "아래에 행 삽입",
+    "alignLeft": "왼쪽 정렬",
+    "alignCenter": "가운데 정렬",
+    "alignRight": "오른쪽 정렬",
+    "alignNone": "정렬 없음",
+    "merge": "셀 병합",
+    "unmerge": "셀 병합 해제",
+    "background": "배경",
+    "emoji": "이모지…",
+    "resetWidth": "열 너비 자동 조절",
+    "columnWidth": "드래그하여 {{n}}번째 열 너비 조절",
+    "tableWidth": "바깥쪽 가장자리를 드래그하여 표 너비 조절",
+    "widthGroup": "표 너비",
+    "widthNarrow": "좁게",
+    "widthMedium": "보통",
+    "widthFull": "전체 너비",
+    "bg": {
+      "yellow": "노란색",
+      "green": "초록색",
+      "teal": "청록색",
+      "blue": "파란색",
+      "purple": "보라색",
+      "red": "분홍색",
+      "orange": "주황색",
+      "gray": "회색",
+      "none": "배경 없음"
+    }
+  },
+  "cellSlash": {
+    "aria": "셀에 내용 삽입",
+    "bullet": "글머리 기호 목록",
+    "task": "체크리스트",
+    "ordered": "번호 매기기 목록",
+    "heading1": "제목 1",
+    "heading2": "제목 2",
+    "heading3": "제목 3",
+    "link": "링크",
+    "linkPlaceholder": "텍스트"
+  },
+  "format": {
+    "aria": "텍스트 서식",
+    "bold": "굵게",
+    "italic": "기울임꼴",
+    "underline": "밑줄",
+    "strike": "취소선",
+    "code": "코드",
+    "highlight": "강조",
+    "highlightColor": "강조 색상",
+    "highlightNone": "강조 해제",
+    "quote": "인용",
+    "link": "링크",
+    "status": "상태",
+    "comment": "댓글"
+  },
+  "toolbar": {
+    "aria": "명령 도구 모음",
+    "more": "명령 더 보기",
+    "unpin": "도구 모음 숨기기({{key}})",
+    "show": "명령 도구 모음 표시({{key}})",
+    "hint": "도구 모음을 숨겼습니다. 모드 전환 옆 버튼이나 {{key}}로 다시 표시할 수 있습니다. ‘/’를 입력하면 블록이 삽입됩니다.",
+    "indent": "목록 항목 들여쓰기",
+    "dedent": "목록 항목 내어쓰기"
+  },
+  "mdx": {
+    "titleJsx": "MDX 컴포넌트입니다. 소스에서 편집하세요",
+    "titleEsm": "MDX 가져오기 구문입니다. 소스에서 편집하세요",
+    "badgeJsx": "MDX 컴포넌트",
+    "badgeEsm": "MDX 가져오기"
+  },
+  "html": {
+    "title": "HTML 블록입니다. 소스에서 편집하세요"
+  },
+  "details": {
+    "toggle": "펼치기 또는 접기",
+    "untitled": "자세히 보기",
+    "empty": "아직 내용이 없습니다",
+    "editHint": "접을 수 있는 블록입니다. 소스에서 편집하세요"
+  },
+  "preview": {
+    "loading": "불러오는 중…",
+    "missing": "페이지를 찾을 수 없습니다"
+  },
+  "image": {
+    "clickToEdit": "클릭하여 마크다운 원문 열기",
+    "edit": "이미지 편집",
+    "description": "설명",
+    "descriptionPlaceholder": "이미지에 대한 설명을 입력하세요",
+    "size": "크기",
+    "sizeAuto": "자동",
+    "cancel": "취소",
+    "save": "저장",
+    "notFound": "이미지를 찾을 수 없습니다: {{src}}"
+  },
+  "task": {
+    "done": "할 일 완료",
+    "notDone": "할 일 미완료"
+  },
+  "upload": {
+    "placeholder": "{{name}} 업로드 중…",
+    "failed": "{{name}} 파일을 업로드하지 못했습니다",
+    "onlyImages": "이미지만 삽입할 수 있습니다"
+  },
+  "pasteChooser": {
+    "title": "마크다운 문서를 붙여넣었습니다",
+    "lines": "마크다운 문서 {{count}}줄을 붙여넣었습니다",
+    "body": "본문에 삽입",
+    "link": "하위 페이지를 만들고 링크 삽입",
+    "cancel": "취소",
+    "failed": "페이지를 만들지 못했습니다",
+    "untitled": "붙여넣은 문서"
+  },
+  "emoji": {
+    "searchPlaceholder": "이모지 검색…"
+  },
+  "mermaid": {
+    "edit": "다이어그램 편집",
+    "notFound": "다이어그램 블록을 찾을 수 없습니다",
+    "doubleClickToEdit": "드래그하여 이동하고 Ctrl/⌘와 마우스 휠로 확대·축소하세요. 두 번 클릭하면 편집할 수 있습니다",
+    "zoomIn": "확대",
+    "zoomOut": "축소",
+    "zoomReset": "다이어그램 크기에 맞추기",
+    "modalAria": "다이어그램 편집기",
+    "modalTitle": "Mermaid 다이어그램",
+    "fullscreen": "전체 화면으로 열기",
+    "restore": "전체 화면 종료",
+    "close": "닫기",
+    "templates": "템플릿",
+    "replaceConfirm": "현재 코드를 이 템플릿으로 교체할까요?",
+    "hint": "⌘/Ctrl + Enter로 저장 · Esc로 취소",
+    "cancel": "취소",
+    "save": "저장",
+    "deleted": "다이어그램 블록이 삭제되어 변경 사항을 저장하지 못했습니다",
+    "changed": "다이어그램 블록이 변경되어 편집 내용을 저장하지 못했습니다",
+    "visualLoading": "시각적 편집기 불러오는 중…",
+    "visualFailed": "이 다이어그램을 시각적 편집기로 열 수 없습니다. 왼쪽에서 코드를 수정하고 오른쪽에서 결과를 확인하세요",
+    "connect": "연결",
+    "connectTitle": "연결 모드: 한 노드에서 다른 노드로 드래그하세요",
+    "addHint": "(+)를 누르면 연결된 요소를 추가합니다. 옆의 핸들을 끌어 연결선을 만들고, 연결선 위의 (+)를 눌러 요소를 삽입하세요",
+    "linkTitle": "여기에서 다른 요소로 드래그하여 연결하세요",
+    "addTitle": "캔버스에 {{thing}} 추가",
+    "addHintFlat": "요소의 (+)를 눌러 요소를 하나 더 추가하세요",
+    "addHintSequence": "생명선의 (+)를 눌러 이벤트를 삽입하거나 다른 참여자에게 드래그해 연결하세요",
+    "plus": {
+      "grow": "{{thing}} 추가 후 연결",
+      "split": "이 연결선에 {{thing}} 삽입",
+      "child": "안에 {{thing}} 추가",
+      "append": "{{thing}} 추가"
+    },
+    "label": {
+      "node": "노드",
+      "state": "상태",
+      "class": "클래스",
+      "entity": "엔터티",
+      "participant": "참여자",
+      "task": "작업",
+      "slice": "조각",
+      "period": "기간",
+      "idea": "아이디어",
+      "item": "항목"
+    },
+    "thing": {
+      "node": "노드",
+      "state": "상태",
+      "class": "클래스",
+      "entity": "엔터티",
+      "participant": "참여자",
+      "task": "작업",
+      "slice": "조각",
+      "period": "기간",
+      "idea": "아이디어",
+      "item": "항목"
+    },
+    "new": {
+      "node": "새 노드",
+      "state": "새 상태",
+      "class": "NewClass",
+      "entity": "NEW_ENTITY",
+      "participant": "새 참여자",
+      "task": "새 작업",
+      "slice": "새 조각",
+      "period": "새 기간 : 새 이벤트",
+      "idea": "새 아이디어",
+      "item": "새 항목"
+    }
+  },
+  "template": {
+    "flowchart": "순서도",
+    "sequence": "시퀀스",
+    "class": "클래스",
+    "state": "상태",
+    "er": "개체 관계도",
+    "gantt": "간트 차트",
+    "timeline": "타임라인",
+    "pie": "원형 차트",
+    "mindmap": "마인드맵"
+  },
+  "fence": {
+    "mermaid": "코드를 다이어그램으로 표시"
+  },
+  "templateCode": {
+    "flowchart": "flowchart TD\n  A[시작] --> B{조건 충족?}\n  B -- 예 --> C[실행]\n  B -- 아니요 --> D[다른 작업]\n  C --> E[종료]\n  D --> E",
+    "sequence": "sequenceDiagram\n  participant A as 클라이언트\n  participant S as 서버\n  A->>S: 요청\n  S-->>A: 응답\n  Note over A,S: 요청 및 응답 완료",
+    "class": "classDiagram\n  class Page {\n    +string id\n    +string title\n    +render()\n  }\n  class Space\n  Space \"1\" --> \"*\" Page : 포함",
+    "state": "stateDiagram-v2\n  state \"초안\" as Draft\n  state \"게시됨\" as Published\n  state \"보관됨\" as Archived\n  [*] --> Draft\n  Draft --> Published: 게시\n  Published --> Archived: 보관\n  Archived --> [*]",
+    "er": "erDiagram\n  SPACE ||--o{ PAGE : \"포함\"\n  PAGE ||--o{ ASSET : \"삽입\"\n  PAGE {\n    string id\n    string title\n  }",
+    "gantt": "gantt\n  title 작업 계획\n  dateFormat YYYY-MM-DD\n  section 1단계\n  분석 :a1, 2026-01-05, 7d\n  개발 :after a1, 14d",
+    "timeline": "timeline\n  title 프로젝트 연혁\n  2024 : 아이디어 구상\n  2025 : 시제품 : 첫 사용자\n  2026 : 출시",
+    "pie": "pie showData\n  title 시간 배분\n  \"개발\" : 45\n  \"검토\" : 25\n  \"회의\" : 30",
+    "mindmap": "mindmap\n  root((Folio))\n    페이지\n      마크다운\n      다이어그램\n    공동 작업\n      CRDT\n      커서"
+  },
+  "slash": {
+    "heading1": {
+      "name": "제목 1",
+      "description": "가장 큰 섹션 제목"
+    },
+    "heading2": {
+      "name": "제목 2",
+      "description": "섹션 안의 부제목"
+    },
+    "heading3": {
+      "name": "제목 3",
+      "description": "세 번째 수준의 제목"
+    },
+    "text": {
+      "name": "일반 텍스트",
+      "description": "서식 없는 문단"
+    },
+    "list": {
+      "name": "글머리 기호 목록",
+      "description": "글머리 기호가 있는 항목"
+    },
+    "ordered": {
+      "name": "번호 매기기 목록",
+      "description": "순서가 있는 항목"
+    },
+    "task": {
+      "name": "체크리스트",
+      "description": "체크박스가 있는 할 일"
+    },
+    "table": {
+      "name": "표",
+      "description": "페이지에서 바로 편집하는 표"
+    },
+    "columns2": {
+      "name": "2단",
+      "description": "테두리 없는 2단 레이아웃"
+    },
+    "columns3": {
+      "name": "3단",
+      "description": "테두리 없는 3단 레이아웃"
+    },
+    "columns4": {
+      "name": "4단",
+      "description": "테두리 없는 4단 레이아웃"
+    },
+    "columns5": {
+      "name": "5단",
+      "description": "테두리 없는 5단 레이아웃"
+    },
+    "code": {
+      "name": "코드 블록",
+      "description": "고정폭 글꼴과 구문 강조를 적용한 블록"
+    },
+    "mermaid": {
+      "name": "Mermaid 다이어그램",
+      "description": "텍스트를 입력해 다이어그램 그리기",
+      "code": "flowchart TD\nA[시작] --> B[종료]"
+    },
+    "image": {
+      "name": "이미지",
+      "description": "컴퓨터에서 파일 업로드"
+    },
+    "link": {
+      "name": "링크",
+      "description": "선택한 텍스트에 링크 추가"
+    },
+    "imageLink": {
+      "name": "URL로 이미지 삽입",
+      "description": "이미지 경로를 직접 입력하여 삽입"
+    },
+    "quote": {
+      "name": "인용",
+      "description": "본문과 구분되는 인용문"
+    },
+    "note": {
+      "name": "참고",
+      "description": "참고 정보를 담은 콜아웃"
+    },
+    "tip": {
+      "name": "팁",
+      "description": "도움말을 담은 콜아웃"
+    },
+    "important": {
+      "name": "중요",
+      "description": "핵심 내용을 강조하는 콜아웃"
+    },
+    "warning": {
+      "name": "경고",
+      "description": "위험을 알리는 콜아웃"
+    },
+    "expand": {
+      "name": "접기/펼치기",
+      "description": "세부 내용을 접어 두는 블록",
+      "summary": "제목"
+    },
+    "emoji": {
+      "name": "이모지",
+      "description": "목록에서 이모지 선택"
+    },
+    "divider": {
+      "name": "구분선",
+      "description": "블록 사이에 가로선 삽입"
+    },
+    "pagetree": {
+      "name": "페이지 트리",
+      "description": "이 페이지의 하위 페이지 목록"
+    },
+    "status": {
+      "name": "상태",
+      "description": "Confluence처럼 색상으로 구분하는 상태 배지"
+    }
+  },
+  "base": {
+    "editHint": "베이스 보기입니다. 소스에서 YAML을 편집하세요",
+    "badge": "베이스"
+  },
+  "pagetree": {
+    "placeholder": "페이지 트리({{depth}}단계)",
+    "badge": "트리",
+    "editHint": "페이지 트리입니다. 소스에서 편집하세요"
+  },
+  "statusTag": {
+    "edit": "상태 편집",
+    "text": "상태 텍스트",
+    "color": "상태 색상",
+    "defaultText": "상태",
+    "colors": {
+      "grey": "회색",
+      "blue": "파란색",
+      "green": "초록색",
+      "yellow": "노란색",
+      "red": "빨간색",
+      "purple": "보라색"
+    }
+  }
+}

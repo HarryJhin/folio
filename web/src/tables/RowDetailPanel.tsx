@@ -8,6 +8,7 @@ import { OptionPicker } from './cells/OptionPicker';
 import { ValueChips } from './cells/Chip';
 import { ColumnTypeIcon } from './cells/typeMeta';
 import { cellToText } from './core';
+import { formatCalendarValue } from '../app/formatDate';
 import { parseLink, serializeLink } from './cells/CellComponents';
 import { useIsMobile } from './useMobile';
 
@@ -146,7 +147,7 @@ function RowField({
   onChange: (value: TableCellValue) => void;
   onCreateOption?: (columnId: string, value: string) => void;
 }) {
-  const { t } = useTranslation('tables');
+  const { t, i18n } = useTranslation('tables');
   const anchorRef = useRef<HTMLButtonElement>(null);
   const [picking, setPicking] = useState(false);
 
@@ -246,6 +247,16 @@ function RowField({
           onChange={(event) => onChange(serializeLink(event.target.value, url))}
           className={inputClass}
         />
+      </div>
+    );
+  }
+
+  if (readOnly && column.type === 'date') {
+    const date = cellToText(value);
+    return (
+      <div className="flex flex-col gap-1">
+        {label}
+        <span className="text-sm tabular-nums">{formatCalendarValue(date, i18n.language)}</span>
       </div>
     );
   }

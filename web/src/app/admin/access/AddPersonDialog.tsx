@@ -135,7 +135,7 @@ export function AddPersonDialog({ onClose }: AddPersonDialogProps) {
         }}
       >
         <LabeledInput label={t('auth.name')} required autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-        <LabeledInput label="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        <LabeledInput label={t('ui.email')} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs text-neutral-500 dark:text-neutral-400">{t('access.addPerson.methodLabel')}</span>

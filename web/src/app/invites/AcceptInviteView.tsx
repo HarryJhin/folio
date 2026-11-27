@@ -215,7 +215,7 @@ export function AcceptInviteView() {
             )}
           </div>
           <LabeledInput
-            label="Email"
+            label={t('ui.email')}
             type="email"
             required
             autoComplete="email"

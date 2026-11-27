@@ -11,7 +11,8 @@
  */
 
 /** The interface language ('en', 'uk-UA', ...) as the name the prompt uses; English for anything without a bundle of its own. */
-export function writingRulesLanguageName(language: string | undefined): 'Ukrainian' | 'English' {
+export function writingRulesLanguageName(language: string | undefined): string {
+  if (/^ko(\b|[-_])/i.test(language ?? '')) return 'Korean';
   return /^uk(\b|[-_])/i.test(language ?? '') ? 'Ukrainian' : 'English';
 }
 

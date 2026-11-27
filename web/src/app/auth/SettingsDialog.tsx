@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { normalizeUsername } from '@shared/contracts';
+import { DEFAULT_UI_LANGUAGE, normalizeUsername } from '@shared/contracts';
 import type { UiLanguage, User } from '@shared/contracts';
 import { useSettings } from '../settings';
 import { setUiLanguage } from '../../i18n';
@@ -84,7 +84,7 @@ export function SettingsDialog({ user, onClose }: SettingsDialogProps) {
         </Field>
         <Field label={t('settings.language.label')}>
           <SegmentedControl
-            value={(i18n.language as UiLanguage) ?? 'uk'}
+            value={(i18n.language as UiLanguage) ?? DEFAULT_UI_LANGUAGE}
             onChange={(lang) => void setUiLanguage(lang)}
             options={LANGUAGE_OPTIONS}
           />

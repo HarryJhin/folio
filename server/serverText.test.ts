@@ -5,17 +5,21 @@ import { describe, expect, it } from 'vitest';
 import { resolveTextLanguage, serverText, serverTextLanguages } from './serverText.js';
 
 describe('serverText', () => {
-  it('ships English and Ukrainian', () => {
-    expect(serverTextLanguages()).toEqual(expect.arrayContaining(['en', 'uk']));
+  it('ships Korean, English and Ukrainian', () => {
+    expect(serverTextLanguages()).toEqual(expect.arrayContaining(['ko', 'en', 'uk']));
   });
 
   it('prefers the saved language when there is a bundle for it', () => {
+    expect(resolveTextLanguage(undefined, 'ko-KR,en;q=0.8')).toBe('ko');
+    expect(resolveTextLanguage('ko', 'en-US')).toBe('ko');
     expect(resolveTextLanguage('uk', 'en-US,en;q=0.9')).toBe('uk');
   });
 
   it('falls back to the browser languages, in order', () => {
     expect(resolveTextLanguage(undefined, 'de-DE,uk;q=0.8,en;q=0.5')).toBe('uk');
     expect(resolveTextLanguage('xx', 'en-GB')).toBe('en');
+    expect(resolveTextLanguage(undefined, 'en;q=0, uk;q=0.3, ko-KR;q=1')).toBe('ko');
+    expect(resolveTextLanguage(undefined, 'uk;q=0.7, en;q=0.7')).toBe('uk');
   });
 
   it('treats a Russian browser as Ukrainian, and a stale saved ru as no preference', () => {
@@ -23,9 +27,9 @@ describe('serverText', () => {
     expect(resolveTextLanguage('ru', 'en-GB')).toBe('en');
   });
 
-  it('falls back to English when nothing matches', () => {
-    expect(resolveTextLanguage(undefined, 'de-DE,fr;q=0.8')).toBe('en');
-    expect(resolveTextLanguage(null, null)).toBe('en');
+  it('uses the Korean instance default when nothing matches', () => {
+    expect(resolveTextLanguage(undefined, 'de-DE,fr;q=0.8')).toBe('ko');
+    expect(resolveTextLanguage(null, null)).toBe('ko');
   });
 
   it('writes the text in the requested language, English otherwise', () => {

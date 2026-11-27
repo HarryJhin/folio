@@ -1919,10 +1919,10 @@ function SaveStateChip({
   /** So the measurement can read this chip's real rect; null while the chip is in its 'idle' (unrendered) state. */
   innerRef: Ref<HTMLDivElement>;
 }) {
-  const { t } = useTranslation('diagrams');
+  const { t, i18n } = useTranslation('diagrams');
   if (state === 'idle') return null;
 
-  const time = lastSavedAt?.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) ?? null;
+  const time = lastSavedAt?.toLocaleTimeString(i18n.language, { hour: '2-digit', minute: '2-digit' }) ?? null;
   const isProblem = state === 'error' || state === 'unauthorized' || state === 'invalid-link' || state === 'offline';
 
   return (

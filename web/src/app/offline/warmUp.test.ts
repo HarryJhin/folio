@@ -9,11 +9,12 @@ const manifest: BuildManifest = {
   'src/diagrams/BoardCanvas.tsx': {
     file: 'assets/BoardCanvas-EEEEEEEE.js',
     imports: ['index.html', '_shared.js', '_core.js'],
-    dynamicImports: ['_roundRect.js', '_uk.js', '_de.js', '_en.js'],
+    dynamicImports: ['_roundRect.js', '_uk.js', '_de.js', '_en.js', '_ko.js'],
     css: ['assets/BoardCanvas-FFFFFFFF.css'],
   },
   '_core.js': { file: 'assets/chunk-EIO257PC-GGGGGGGG.js', assets: ['assets/Assistant-Bold-HHHHHHHH.woff2'] },
   '_roundRect.js': { file: 'assets/roundRect-IIIIIIII.js' },
+  '_ko.js': { file: 'assets/ko-KR-MTYHY66A-NNNNNNNN.js' },
   '_uk.js': { file: 'assets/uk-UA-QMV73CPH-JJJJJJJJ.js' },
   '_de.js': { file: 'assets/de-DE-XR44H4JA-KKKKKKKK.js' },
   '_en.js': { file: 'assets/en-B4ZKOASM-LLLLLLLL.js' },
@@ -44,6 +45,7 @@ describe('boardEditorFiles', () => {
   });
 
   it('keeps the three interface languages Folio speaks and drops the others', () => {
+    expect(files).toContain('assets/ko-KR-MTYHY66A-NNNNNNNN.js');
     expect(files).toContain('assets/uk-UA-QMV73CPH-JJJJJJJJ.js');
     expect(files).toContain('assets/en-B4ZKOASM-LLLLLLLL.js');
     expect(files).not.toContain('assets/de-DE-XR44H4JA-KKKKKKKK.js');

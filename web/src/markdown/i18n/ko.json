@@ -1,0 +1,73 @@
+{
+  "pagetree": {
+    "loading": "페이지 트리 불러오는 중…",
+    "empty": "하위 페이지 없음",
+    "fallback": "페이지 트리"
+  },
+  "base": {
+    "unavailable": "베이스 보기는 Folio에 로그인하면 볼 수 있습니다"
+  },
+  "form": {
+    "loading": "양식 불러오는 중…",
+    "notFound": "양식을 찾을 수 없습니다",
+    "fallback": "양식",
+    "publicUnavailable": "양식은 Folio 안에서 작성할 수 있습니다"
+  },
+  "alerts": {
+    "note": "참고",
+    "tip": "팁",
+    "important": "중요",
+    "warning": "경고",
+    "caution": "주의",
+    "info": "정보",
+    "todo": "할 일",
+    "abstract": "요약",
+    "success": "성공",
+    "question": "질문",
+    "failure": "실패",
+    "danger": "위험",
+    "bug": "버그",
+    "example": "예시",
+    "quote": "인용"
+  },
+  "table": {
+    "switchToScroll": "원래 열 너비로 보기(가로 스크롤)",
+    "switchToFit": "표를 영역 너비에 맞추기"
+  },
+  "backlinks": {
+    "title": "백링크"
+  },
+  "collapsible": {
+    "toggleLabel": "섹션 접기",
+    "hiddenBlocks_one": "숨겨진 블록 {{count}}개",
+    "hiddenBlocks_other": "숨겨진 블록 {{count}}개"
+  },
+  "link": {
+    "shareUnavailable": "이 링크로는 페이지를 열 수 없습니다",
+    "notFound": "페이지를 찾을 수 없습니다: {{path}}"
+  },
+  "image": {
+    "viewer": "이미지 뷰어",
+    "zoomOut": "축소",
+    "zoomIn": "확대",
+    "resetZoom": "확대 비율 초기화",
+    "close": "닫기"
+  },
+  "embed": {
+    "loading": "‘{{title}}’ 불러오는 중…",
+    "cycle": "‘{{title}}’ 페이지가 위에 이미 표시되어 있어 다시 삽입하지 않습니다",
+    "depth": "노트는 최대 {{max}}단계까지 삽입할 수 있습니다",
+    "missing": "‘{{title}}’ 페이지를 찾을 수 없습니다",
+    "fragment": "‘{{title}}’에서 삽입하려는 섹션을 찾을 수 없습니다",
+    "forbidden": "‘{{title}}’ 페이지에 접근할 권한이 없습니다",
+    "unsupported": "여기에 ‘{{title}}’ 페이지를 삽입할 수 없습니다",
+    "failed": "‘{{title}}’ 페이지를 불러오지 못했습니다",
+    "open": "‘{{title}}’ 열기"
+  },
+  "wikilink": {
+    "notFound": "‘{{name}}’ 페이지가 없습니다",
+    "create": "‘{{name}}’ 페이지 만들기",
+    "creating": "만드는 중…",
+    "createFailed": "페이지를 만들지 못했습니다"
+  }
+}

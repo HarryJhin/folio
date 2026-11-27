@@ -6,6 +6,7 @@ import type { DemoInfo, SsoDiscoverResult, SsoProviderPublic } from '@shared/con
 import { track } from '../../analytics';
 import { api, ApiError } from '../api';
 import { useApiErrorText } from '../errorText';
+import { useDocumentTitle } from '../hooks';
 import { LabeledInput } from '../ui/LabeledInput';
 import '../i18n/register';
 
@@ -117,6 +118,7 @@ function automaticStartUrl({ autoSsoProvider, ssoProviders }: LoginScreenProps) 
 
 export function LoginScreen(props: LoginScreenProps) {
   const { t } = useTranslation('app');
+  useDocumentTitle(t('auth.login.submit'));
   // Freeze the initial decision: the manual form consumes ?authError and removes it from the URL.
   const [startUrl, setStartUrl] = useState(() => automaticStartUrl(props));
   const started = useRef(false);
@@ -316,7 +318,7 @@ function ManualLoginScreen({ onDone, google, ssoProviders, demo }: LoginScreenPr
           }}
         >
           <LabeledInput
-            label="Email"
+            label={t('ui.email')}
             type="email"
             required
             autoFocus
