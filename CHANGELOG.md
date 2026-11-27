@@ -19,14 +19,14 @@ Notable changes to Folio. Versions follow [Semantic Versioning](https://semver.o
 - Spaces open in the graph by default. Space admins can choose Space home as the first view in Space settings.
 
 - Conditional Markdown saves through REST and MCP report revision conflicts. Page history follows renames, and trash restores preserve compound file types and identifiers on name conflicts.
-- Ordinary Markdown links use the cross-space catalog. The MCP unresolved-link list takes the viewer’s permissions into account, and Form and Base links report the correct child folder. Creating a space with fixed navigation opens its bookmarkable first view.
+- Ordinary Markdown links use the cross-space catalog. The MCP unresolved-link list takes the viewer’s permissions into account, and Form and Base links report the correct child folder.
 - Duplicated table rows have independent IDs. Existing duplicate IDs are repaired when read. Filtered row insertion follows the selected source row. Current-view exports omit hidden cell values, and toolbar YAML preserves the saved views for import.
 - MCP supports the 2026-07-28 and 2025-11-25 lifecycles, browser origin checks and OAuth scope challenges. Authorization-code exchange accepts an omitted redirect URI with PKCE, and dynamic registration returns the registered client URI.
 - OIDC providers always request the openid scope. SAML verifies bearer confirmations against the receiving endpoint. SCIM honors attribute selection for users and groups.
 
 - Operators can disable the built-in Ask AI chat for members and public-site visitors with `FOLIO_DISABLE_ASSISTANT=1`.
 
-- Operators can order primary spaces for the switcher, home redirect and MCP discovery. Global search prioritizes primary matches and can group projected copies. Reference spaces remain accessible through explicit navigation. A server-side catalog can preserve exact per-file wiki and Markdown links across branches of the same repository.
+- The switcher and MCP now list all accessible spaces, including newly created spaces. Operators can set their display order and preferred home. Global document search prioritizes primary matches and can group projected copies. A server-side catalog can preserve exact per-file wiki and Markdown links across branches of the same repository.
 
 - Signed-in readers can follow repository-root note links across folder-backed spaces on the same Git branch.
 

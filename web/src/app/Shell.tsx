@@ -11,7 +11,7 @@ import { useLocalStorage } from './hooks';
 import { SetPagePresenceContext, type PagePresencePerson } from './presence';
 import { useQuery } from '@tanstack/react-query';
 import { api } from './api';
-import { hiddenRootTarget, homeSpaces, readLastSpace, rememberLastSpace, spaceEntryPath } from './lastSpace';
+import { rememberLastSpace, spaceEntryPath } from './lastSpace';
 import { OfflineRuntime } from './offline/OfflineRuntime';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { PageCrashed } from './routes/PageCrashed';
@@ -96,7 +96,7 @@ export function Shell() {
   const bareRoot = useMatch({ path: '/s/:space', end: true });
   const { data: spaceList, isLoading: loadingSpaces } = useQuery({ queryKey: ['spaces'], queryFn: api.listSpaces });
   useEffect(() => {
-    if (homeSpaces(spaceList).some(item => item.slug === space)) rememberLastSpace(space);
+    if (spaceList?.spaces.some(item => item.slug === space)) rememberLastSpace(space);
   }, [space, spaceList]);
 
   useEffect(() => {
@@ -162,7 +162,7 @@ export function Shell() {
 
   if (bareRoot && loadingSpaces) return null;
   if (bareRoot && spaceList) {
-    const destination = hiddenRootTarget(spaceList, space, readLastSpace()) ?? spaceList.spaces.find(item => item.slug === space);
+    const destination = spaceList.spaces.find(item => item.slug === space);
     if (destination) {
       return <Navigate to={{ ...location, pathname: spaceEntryPath(destination, location.hash) }} replace />;
     }

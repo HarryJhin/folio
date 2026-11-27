@@ -7,7 +7,7 @@ files are the **source of truth**. PostgreSQL holds operational data and a
 derived index. A write reaches the file immediately; the Git commit may appear
 with a delay.
 
-With ordered primary spaces configured, `list_spaces` defaults to the caller’s visible primary spaces. Pass `{"includeAll":true}` to include accessible reference spaces.
+`list_spaces` returns every space the caller can access. Configured primary and reference spaces appear first. The optional `includeAll` argument is accepted for compatibility.
 
 ## Connecting
 
