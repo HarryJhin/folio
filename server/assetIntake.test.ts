@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import * as authStore from './auth/store.js';
@@ -101,6 +102,48 @@ describe('storeUploadedAsset — real PG + real git', () => {
     const result = await storeUploadedAsset({ space, filename: 'a.png', data: bytesA, user, reuseIdenticalInRepo: true });
     expect(result.path).toBe('assets/a-2.png');
     expect((await fs.lstat(path.join(dir, 'a-2.png'))).isFile()).toBe(true);
+  });
+
+  it('does not write through a dangling symlink', async () => {
+    const space = await newSpace('Intake Dangling', 'repo');
+    const dir = path.join(storage.getSpaceDir(space), 'assets');
+    await fs.mkdir(dir, { recursive: true });
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'intake-outside-'));
+    const target = path.join(outsideDir, 'missing.bin');
+    await fs.symlink(target, path.join(dir, 'a.png'));
+    try {
+      const result = await storeUploadedAsset({ space, filename: 'a.png', data: bytesA, user });
+      expect(result.path).toBe('assets/a-2.png');
+      expect((await fs.lstat(path.join(dir, 'a-2.png'))).isFile()).toBe(true);
+      expect(await fs.lstat(target).catch(() => null)).toBeNull();
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses when assets is a symlink', async () => {
+    const space = await newSpace('Intake Linked Dir', 'repo');
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'intake-outside-'));
+    await fs.symlink(outsideDir, path.join(storage.getSpaceDir(space), 'assets'));
+    try {
+      await expect(storeUploadedAsset({ space, filename: 'a.png', data: bytesA, user })).rejects.toThrow();
+      expect(await fs.readdir(outsideDir)).toEqual([]);
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
+  });
+
+  it('findRepoAssetByContent ignores a symlinked assets directory', async () => {
+    const space = await newSpace('Intake Linked Find', 'repo');
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'intake-outside-'));
+    await fs.writeFile(path.join(outsideDir, 'a.png'), bytesA);
+    await fs.symlink(outsideDir, path.join(storage.getSpaceDir(space), 'assets'));
+    try {
+      const sha256 = createHash('sha256').update(bytesA).digest('hex');
+      expect(await storage.findRepoAssetByContent(space, 'a.png', sha256, bytesA.length)).toBeNull();
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
   });
 
   it('skips a family file whose size differs from the upload', async () => {

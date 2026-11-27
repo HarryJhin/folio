@@ -5996,16 +5996,28 @@ async function resolveNormalized(space: string, normalized: string): Promise<Pag
 export async function saveAssetIntoRepo(space: string, originalName: string, data: Buffer): Promise<{ url: string; path: string }> {
   if (!(await spaceExists(space))) throw notFound('space');
   const assetsDir = path.join(spaceDir(space), 'assets');
-  await fs.mkdir(assetsDir, { recursive: true });
+  const existing = await fs.lstat(assetsDir).catch(() => null);
+  if (existing && !existing.isDirectory()) throw badRequest('the assets path is not a directory');
+  if (!existing) await fs.mkdir(assetsDir, { recursive: true });
 
   const safeName = sanitizeAssetFilename(originalName);
   const ext = path.extname(safeName);
   const stem = safeName.slice(0, safeName.length - ext.length) || 'asset';
   let finalName = safeName || `asset${ext}`;
   let n = 2;
-  while (await pathExists(path.join(assetsDir, finalName))) finalName = `${stem}-${n++}${ext}`;
-
-  await fs.writeFile(path.join(assetsDir, finalName), data);
+  for (;;) {
+    if (await fs.lstat(path.join(assetsDir, finalName)).catch(() => null)) {
+      finalName = `${stem}-${n++}${ext}`;
+      continue;
+    }
+    try {
+      await fs.writeFile(path.join(assetsDir, finalName), data, { flag: 'wx' });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+      finalName = `${stem}-${n++}${ext}`;
+    }
+  }
   // Indexed as a file right away (wave 3): the embed the editor inserts next resolves to it without waiting for a scan.
   await spaceFiles.recordFile(space, `assets/${finalName}`, path.join(assetsDir, finalName));
   return { url: `/files/${space}/assets/${finalName}`, path: `assets/${finalName}` };
@@ -6013,6 +6025,7 @@ export async function saveAssetIntoRepo(space: string, originalName: string, dat
 
 export async function findRepoAssetByContent(space: string, originalName: string, sha256: string, size: number): Promise<{ url: string; path: string } | null> {
   const assetsDir = path.join(spaceDir(space), 'assets');
+  if (!(await fs.lstat(assetsDir).catch(() => null))?.isDirectory()) return null;
   const safeName = sanitizeAssetFilename(originalName);
   const ext = path.extname(safeName);
   const stem = safeName.slice(0, safeName.length - ext.length) || 'asset';
