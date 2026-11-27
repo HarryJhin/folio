@@ -173,7 +173,28 @@ export function countProperties(properties: Properties, readOnly: readonly strin
  * Obsidian synonym `labels:` and no `tags:` shows those labels as its `tags` row, so the
  * owner sees one tag list however the file spells it.
  */
-export function toDisplayProperties(properties: Properties): Properties {
+const tagKeys = ['tags', 'labels'] as const;
+
+function sourceChips(value: unknown): string[] | null {
+  if (value == null) return [];
+  const chips = typeof value === 'string' ? chipsOf(value, 'tags') : value;
+  return Array.isArray(chips) && chips.every(chip => typeof chip === 'string' && normalizeTagInput(chip))
+    ? chips as string[] : null;
+}
+
+export function foreignWikiTags(properties: Properties): boolean {
+  return tagKeys.some(key => key in properties && sourceChips(properties[key]) === null);
+}
+
+export function toDisplayProperties(properties: Properties, wiki = false): Properties {
+  if (wiki && tagKeys.some(key => key in properties)) {
+    const { tags, labels, ...other } = properties;
+    if (foreignWikiTags(properties)) {
+      return { ...other, tags: 'tags' in properties && 'labels' in properties ? { tags, labels } : ('tags' in properties ? tags : labels) };
+    }
+    const combined = [...sourceChips(tags)!, ...sourceChips(labels)!].map(chip => normalizeTagInput(chip)!);
+    return { ...other, tags: [...new Set(combined)] };
+  }
   if ('tags' in properties || !('labels' in properties)) return properties;
   const { labels, ...rest } = properties;
   return { ...rest, tags: labels };
@@ -186,7 +207,24 @@ export function toDisplayProperties(properties: Properties): Properties {
  * writes in place under `labels:` (server/properties.ts: an existing `labels:` is never
  * removed or migrated).
  */
-export function toWireProperties(display: Properties, original: Properties): Properties {
+export function toWireProperties(display: Properties, original: Properties, wiki = false): Properties {
+  if (wiki) {
+    const { tags: desired, ...wire } = display;
+    for (const key of tagKeys) if (key in original) wire[key] = original[key];
+    if (foreignWikiTags(original)) return wire;
+    const before: string[] = (toDisplayProperties(original, true).tags as string[] | undefined) ?? [];
+    const after = (sourceChips(desired) ?? []).map(chip => normalizeTagInput(chip)!);
+    if (sameValue(before, after)) return wire;
+    const added = after.filter(chip => !before.includes(chip));
+    const destination = 'labels' in original && !('tags' in original) ? 'labels' : 'tags';
+    for (const key of tagKeys) {
+      const stored = sourceChips(original[key])!;
+      const retained = stored.filter(chip => after.includes(normalizeTagInput(chip)!));
+      if (key === destination) retained.push(...added);
+      if (!sameValue(stored, retained)) wire[key] = retained;
+    }
+    return wire;
+  }
   if ('tags' in original || !('labels' in original) || !('tags' in display)) return display;
   if (!sameValue(display.tags, original.labels)) return display;
   const { tags: _tags, ...rest } = display;

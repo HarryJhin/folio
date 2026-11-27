@@ -103,7 +103,7 @@ export function usePageProperties(pageId: string, space: string, enabled = true)
         for (;;) {
           const server = serverRef.current;
           const original = server?.properties ?? {};
-          const wire = editableProperties(toWireProperties(current, original), server?.readOnly ?? ['id']);
+          const wire = editableProperties(toWireProperties(current, original, !!server?.wikiProperties), server?.readOnly ?? ['id']);
           const answer = await api.updatePageProperties(id, {
             properties: wire,
             ...(server?.etag !== undefined ? { etag: server.etag } : {}),
@@ -168,7 +168,7 @@ export function usePageProperties(pageId: string, space: string, enabled = true)
   return {
     data: query.data,
     isLoading: query.isLoading,
-    properties: optimistic ?? toDisplayProperties(query.data?.properties ?? {}),
+    properties: optimistic ?? toDisplayProperties(query.data?.properties ?? {}, !!query.data?.wikiProperties),
     saving,
     conflict,
     commit,

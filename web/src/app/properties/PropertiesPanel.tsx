@@ -9,11 +9,12 @@ import { useApiErrorText } from '../errorText';
 import { useLocalStorage, useOutsideClick } from '../hooks';
 import { PropertiesSlotContext } from '../header/propertiesSlot';
 import { useToast } from '../ui/Toast';
-import { VERIFICATION_KEYS } from '@shared/verification';
+import { VERIFICATION_KEYS, WIKI_PROPERTIES_MARKER, WIKI_PROPERTY_KEYS } from '@shared/verification';
+import type { WikiProperties } from '@shared/verification';
 import { AddPropertyForm } from './AddPropertyForm';
 import type { NewProperty } from './AddPropertyForm';
 import { PropertyRow } from './PropertyRow';
-import { countProperties, effectiveType, emptyValueFor } from './propertyValues';
+import { effectiveType, emptyValueFor, foreignWikiTags } from './propertyValues';
 import { usePageProperties } from './usePageProperties';
 import { VerificationRows } from './VerificationRows';
 import '../i18n/register';
@@ -41,8 +42,18 @@ const SYNONYM_KEYS = ['labels'];
  * A 409 — the front matter changed under the editor — stops editing and offers a reload.
  */
 /** The open state of the panel, remembered per space; the toggle and the body share it. */
-export function usePropertiesOpen(space: string) {
-  return useLocalStorage<boolean>(`folio:properties-open:${space}`, false);
+export function usePropertiesOpen(space: string, defaultOpen = false) {
+  const [stored, remember] = useLocalStorage<boolean | null>(`folio:properties-open:${space}`, null);
+  const open = stored ?? defaultOpen;
+  return [open, (value: boolean | ((prev: boolean) => boolean)) => remember(typeof value === 'function' ? value(open) : value)] as const;
+}
+
+function panelKeys(properties: Record<string, unknown>, wiki?: WikiProperties): string[] {
+  if (!wiki) return Object.keys(properties);
+  const ordinary = Object.keys(properties).filter(key =>
+    !(WIKI_PROPERTY_KEYS as readonly string[]).includes(key) &&
+    !(key === WIKI_PROPERTIES_MARKER && properties[key] === 'disabled'));
+  return [...wiki.keys, ...ordinary];
 }
 
 /** What both halves need: the loaded front matter, the count, and whether there is anything to show at all. */
@@ -51,7 +62,7 @@ function useView(pageId: string, space: string, canEdit: boolean) {
   const data = state.data;
   const readOnlyKeys = useMemo(() => data?.readOnly ?? ['id'], [data]);
   if (!data) return { state, data, readOnlyKeys, count: 0, visible: false };
-  const count = countProperties(state.properties, readOnlyKeys);
+  const count = panelKeys(state.properties, data.wikiProperties).filter(key => !readOnlyKeys.includes(key)).length;
   // A viewer of a page without properties has nothing to look at, and nothing to add.
   const visible = canEdit || count > 0 || readOnlyKeys.some((key) => key in state.properties);
   return { state, data, readOnlyKeys, count, visible };
@@ -76,6 +87,7 @@ export interface PropertiesHalfProps extends PropertiesPanelProps {
   withVerification?: boolean;
   /** Changing it to a new non-zero value shows the owner / review rows on a page that has none yet ("Owner and review" ghost). */
   assignSignal?: number;
+  reviewedMarkdown?: () => string | undefined;
 }
 
 export function propertiesBodyId(pageId: string): string {
@@ -161,7 +173,7 @@ export function PropertiesToggle({ pageId, space, canEdit, open, onToggle, varia
 }
 
 /** The editors, shown under the chrome row while the toggle is open. */
-export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, layout = 'column', addSignal = 0, onEmptyDone, withVerification = false, assignSignal = 0 }: PropertiesHalfProps) {
+export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, layout = 'column', addSignal = 0, onEmptyDone, withVerification = false, assignSignal = 0, reviewedMarkdown }: PropertiesHalfProps) {
   const { t } = useTranslation('app');
   const errorText = useApiErrorText();
   const showToast = useToast();
@@ -200,13 +212,14 @@ export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, l
   if (!data || !visible || !open) return null;
 
   const readOnlyKeys = data.readOnly;
-  const keys = Object.keys(state.properties);
+  const wiki = data.wikiProperties;
+  const keys = panelKeys(state.properties, wiki);
   const ownKeys = withVerification ? keys.filter((key) => !(VERIFICATION_KEYS as readonly string[]).includes(key)) : keys;
   const hasVerificationKeys = ownKeys.length !== keys.length;
   const visibleKeys = ownKeys.filter((key) => !readOnlyKeys.includes(key));
   const lockedKeys = ownKeys.filter((key) => readOnlyKeys.includes(key));
   const removedKey =
-    editingKey !== null && !(editingKey in state.properties) && lastSeen.current.has(editingKey) && !(draft && draft.key === editingKey) ? editingKey : null;
+    editingKey !== null && !(editingKey in state.properties) && !(WIKI_PROPERTY_KEYS as readonly string[]).includes(editingKey) && lastSeen.current.has(editingKey) && !(draft && draft.key === editingKey) ? editingKey : null;
   const listedKeys = removedKey !== null ? [...visibleKeys, removedKey] : visibleKeys;
   const rowKeys = draft && !(draft.key in state.properties) ? [...listedKeys, draft.key] : listedKeys;
   for (const key of visibleKeys) lastSeen.current.set(key, { value: state.properties[key], type: effectiveType(key, state.properties[key], data.types) });
@@ -261,27 +274,29 @@ export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, l
               </div>
             )}
 
-            {withVerification && <VerificationRows space={space} pageId={pageId} editable={editable} forceShow={assigning} />}
+            {withVerification && wiki?.enabled !== false && <VerificationRows key={pageId} space={space} pageId={pageId} editable={editable}
+              forceShow={assigning} wikiValues={wiki?.enabled ? data.properties : undefined} reviewedMarkdown={reviewedMarkdown} />}
 
             {/* One keyed list for stored rows and the row being added: the new row keeps its place (and the caret) once its first value is saved. */}
             {rowKeys.map((key) => (
               <PropertyRow
                 key={key}
                 name={key}
+                builtInLabel={wiki && key === 'tags' ? t('properties.types.tags') : undefined}
                 value={
-                  key in state.properties ? state.properties[key] : key === removedKey ? lastSeen.current.get(key)!.value : emptyValueFor(draft?.type ?? 'text')
+                  key in state.properties ? state.properties[key] : wiki && key === 'tags' ? null : key === removedKey ? lastSeen.current.get(key)!.value : emptyValueFor(draft?.type ?? 'text')
                 }
                 type={
-                  key in state.properties
+                  wiki && key === 'tags' ? 'tags' : key in state.properties
                     ? effectiveType(key, state.properties[key], data.types)
                     : key === removedKey
                       ? lastSeen.current.get(key)!.type
                       : (draft?.type ?? 'text')
                 }
-                foreign={data.foreign.includes(key)}
-                locked={SYNONYM_KEYS.includes(key)}
+                foreign={data.foreign.includes(key) || (!!wiki && key === 'tags' && foreignWikiTags(data.properties))}
+                locked={SYNONYM_KEYS.includes(key) || (!!wiki && key === WIKI_PROPERTIES_MARKER)}
                 canEdit={editable}
-                draft={!(key in state.properties) && key !== removedKey}
+                draft={draft?.key === key && !(key in state.properties) && key !== removedKey}
                 folioStatus={folioStatus}
                 removedRemotely={key === removedKey}
                 onCommit={(k, v) => void handleCommit(k, v)}
@@ -309,7 +324,7 @@ export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, l
               />
             ))}
 
-            {editable && withVerification && !hasVerificationKeys && !assigning && !adding && (
+            {editable && withVerification && !wiki && !hasVerificationKeys && !assigning && !adding && (
               <button
                 type="button"
                 onClick={() => setAssigning(true)}
@@ -324,7 +339,7 @@ export function PropertiesBody({ pageId, space, canEdit, canManageTypes, open, l
               (adding ? (
                 <AddPropertyForm
                   space={space}
-                  existingKeys={keys}
+                  existingKeys={wiki ? [...new Set([...Object.keys(state.properties), ...WIKI_PROPERTY_KEYS, WIKI_PROPERTIES_MARKER, 'labels'])] : keys}
                   canManageTypes={canManageTypes}
                   onAdd={handleAdd}
                   onClose={() => {
@@ -356,6 +371,7 @@ const TITLE_BUTTON =
 const addWhenEditing = new Set<string>();
 
 export interface PageTitlePropertiesProps extends PropertiesPanelProps {
+  reviewedMarkdown?: () => string | undefined;
   /** Reading mode for someone who may edit: the ghost "+ Property" switches to Live edit and opens "Add property" there. */
   onStartEditing?: () => void;
 }
@@ -366,10 +382,10 @@ export interface PageTitlePropertiesProps extends PropertiesPanelProps {
  * from reading mode it first switches to Live edit, since reading is reading. With some, the "Properties (3)"
  * toggle, its open state remembered per space (usePropertiesOpen) as in the old chrome-row toggle.
  */
-export function PageTitleProperties({ pageId, space, canEdit, canManageTypes, onStartEditing }: PageTitlePropertiesProps) {
+export function PageTitleProperties({ pageId, space, canEdit, canManageTypes, onStartEditing, reviewedMarkdown }: PageTitlePropertiesProps) {
   const { t } = useTranslation('app');
-  const [open, setOpen] = usePropertiesOpen(space);
   const { data, count } = useView(pageId, space, canEdit);
+  const [open, setOpen] = usePropertiesOpen(space, data?.wikiProperties?.enabled);
   // Adding the first property: the body is open although the remembered state may say closed.
   const [adding, setAdding] = useState(false);
   const [addSignal, setAddSignal] = useState(0);
@@ -427,7 +443,7 @@ export function PageTitleProperties({ pageId, space, canEdit, canManageTypes, on
     </button>
   );
   // Only for someone who may edit right now (Live / Source): reading mode shows, never sets, an owner.
-  const assignGhost = canEdit && (
+  const assignGhost = canEdit && !data.wikiProperties && (
     <button type="button" className={TITLE_BUTTON} onClick={startAssigning}>
       <Plus size={13} className="shrink-0" aria-hidden="true" />
       <span className="truncate">{t('verification.assign')}</span>
@@ -454,6 +470,7 @@ export function PageTitleProperties({ pageId, space, canEdit, canManageTypes, on
         open={empty ? adding : open}
         layout="title"
         withVerification
+        reviewedMarkdown={reviewedMarkdown}
         addSignal={addSignal}
         assignSignal={assignSignal}
         onEmptyDone={() => setAdding(false)}

@@ -62,6 +62,19 @@ describe('request retry (transient 502/503/504 during a redeploy)', () => {
     await expect(api.login('a@example.com', 'pw')).rejects.toThrow(ApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('sends an online-only wiki switch exactly once when the response is lost', async () => {
+    const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('connection reset'))
+      .mockResolvedValue(jsonResponse(200, {}));
+    vi.stubGlobal('fetch', fetchMock);
+    resetConnectivityForTests();
+    try {
+      await expect(api.updatePageProperties('p1', { wikiPropertiesEnabled: false, etag: null })).rejects.toThrow('connection reset');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      resetConnectivityForTests();
+    }
+  });
 });
 
 it('reads explicit guest routes without requesting or caching an owner identity', async () => {

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import { BookOpen, Check, ClipboardList, Columns2, Download, ExternalLink, History, Lock, LockOpen, MoreHorizontal, RefreshCw, Share2, SpellCheck, Star, Timer } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AuthState } from '@shared/contracts';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useToast } from '../ui/Toast';
@@ -10,6 +10,9 @@ import { canRegisterOfflineReader } from '../offline/readerReady';
 import { saveDocumentForOfflineReading } from '../offline/readerAccess';
 import { hasOfflineDocument, removeOfflineDocument, subscribeOfflineDocuments } from '../offline/savedDocuments';
 import { api } from '../api';
+import { getConnectivity, useConnectivity } from '../offline/connectivity';
+import { pagePropertiesKey } from '../properties/usePageProperties';
+import { useApiErrorText } from '../errorText';
 import { Menu } from '../ui/Menu';
 import { useCompare } from '../compare/compareContext';
 import { isStarred, useStars, useToggleStar } from '../stars';
@@ -136,7 +139,7 @@ function ReplaceFileInput({ space, pageId, inputRef }: { space: string; pageId: 
   );
 }
 
-function Rows({ space, pageId, pagePath, title, isTable, fileActions, isProse, canEdit, canStartTimer, onOpen, close, onReplaceFile, onCreateForm, creatingForm, offlineAccount, onSaveOffline }: PageActionsMenuProps & { offlineAccount?: string; onSaveOffline: () => void; close: () => void; onReplaceFile: () => void; onCreateForm: () => void; creatingForm: boolean }) {
+function Rows({ space, pageId, pagePath, title, isTable, fileActions, isProse, canEdit, canSaveOffline, canStartTimer, onOpen, close, onReplaceFile, onCreateForm, creatingForm, offlineAccount, onSaveOffline }: PageActionsMenuProps & { offlineAccount?: string; onSaveOffline: () => void; close: () => void; onReplaceFile: () => void; onCreateForm: () => void; creatingForm: boolean }) {
   const { t } = useTranslation('app');
   const open = (surface: HeaderSurface) => () => {
     close();
@@ -153,6 +156,7 @@ function Rows({ space, pageId, pagePath, title, isTable, fileActions, isProse, c
           {!fileActions && <Row icon={<Download size={15} />} label={t('header.actions.export')} onSelect={open('export')} />}
           {offlineAccount && <OfflineRow account={offlineAccount} pageId={pageId} close={close} onSave={onSaveOffline} />}
           <AccessRow pageId={pageId} onSelect={open('access')} />
+          {canEdit && (canSaveOffline || isProse) && <WikiPropertiesRow pageId={pageId} space={space} />}
           {title !== undefined && <CompareRow pageId={pageId} space={space} title={title} close={close} />}
           {((canEdit && isTable) || fileActions) && <Separator />}
           {title !== undefined && isProse && <WritingRulesRow pageId={pageId} space={space} title={title} close={close} />}
@@ -207,6 +211,7 @@ interface RowProps {
   label: string;
   onSelect: () => void;
   title?: string;
+  description?: string;
   disabled?: boolean;
   /** Set for a toggle row (compare): shown as a check at the row's end. */
   checked?: boolean;
@@ -214,7 +219,7 @@ interface RowProps {
   className?: string;
 }
 
-function Row({ icon, label, onSelect, title, disabled, checked, active, className }: RowProps) {
+function Row({ icon, label, onSelect, title, description, disabled, checked, active, className }: RowProps) {
   return (
     <button
       type="button"
@@ -232,10 +237,45 @@ function Row({ icon, label, onSelect, title, disabled, checked, active, classNam
       <span aria-hidden="true" className={`flex shrink-0 ${active ? '' : 'text-neutral-500 dark:text-neutral-400'}`}>
         {icon}
       </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1">{label}{description && <span className="mt-0.5 block max-w-64 whitespace-normal text-xs text-neutral-500">{description}</span>}</span>
       {checked && <Check size={14} aria-hidden="true" className="shrink-0 text-blue-600 dark:text-blue-400" />}
     </button>
   );
+}
+
+function WikiPropertiesRow({ pageId, space }: { pageId: string; space: string }) {
+  const { t } = useTranslation('app');
+  const online = useConnectivity() !== 'offline';
+  const client = useQueryClient();
+  const showToast = useToast();
+  const errorText = useApiErrorText();
+  const queryKey = pagePropertiesKey(pageId);
+  const query = useQuery({
+    queryKey, queryFn: () => api.getPageProperties(pageId), enabled: online, retry: false,
+    staleTime: 0, refetchOnMount: 'always', networkMode: 'always',
+  });
+  const write = useMutation({
+    networkMode: 'always', retry: false,
+    mutationFn: (body: { wikiPropertiesEnabled: boolean; etag: string | null }) => api.updatePageProperties(pageId, body),
+    onSuccess: result => { if (result) client.setQueryData(queryKey, result); },
+    onError: err => showToast(errorText(err, 'properties.saveFailed')),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey });
+      void client.invalidateQueries({ queryKey: ['page', pageId] });
+      void client.invalidateQueries({ queryKey: ['tree', space] });
+    },
+  });
+  const data = query.data;
+  if (!data?.wikiProperties || (!data.canEdit && data.propertyEtag !== undefined)) return null;
+  const { enabled } = data.wikiProperties;
+  const disabled = !online || !data.canEdit || data.propertyEtag === undefined || !query.isSuccess || query.fetchStatus !== 'idle' || write.isPending;
+  return <Row icon={<ClipboardList size={15} />} label={t('wikiProperties.label')} checked={enabled} disabled={disabled}
+    description={t(enabled ? 'wikiProperties.pause' : 'wikiProperties.resume')}
+    onSelect={() => {
+      if (!disabled && data.propertyEtag !== undefined && getConnectivity() !== 'offline') {
+        write.mutate({ wikiPropertiesEnabled: !enabled, etag: data.propertyEtag });
+      }
+    }} />;
 }
 
 function LinkRow({ href, newTab, icon, label, close }: { href: string; newTab?: boolean; icon: ReactNode; label: string; close: () => void }) {
