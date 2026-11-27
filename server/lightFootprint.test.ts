@@ -194,6 +194,19 @@ describe('light footprint for rootPath spaces (real PG + git)', () => {
     expect(await gitStatus(repo)).toBe(baseline);
   });
 
+  it('preserves inherited wiki settings after moving and reindexing a light-footprint template copy', async () => {
+    const source = "---\nfolio_wiki_properties: disabled\nlabels: [legacy]\n---\n# Review\n";
+    const { slug } = await connect(`${RUN} Wiki template`, { ...SEED, 'docs/_templates/review.md': source }, 'docs');
+    const template = (await idsByPath(slug)).get('_templates/review.md')!;
+    const copy = await storage.createFromTemplate(template, slug, '', { title: 'Review copy', author: 'Editor' });
+    await storage.movePage(copy.id, 'guide');
+    await storage.scanSpace(slug);
+    const props = await readPageProperties(await storage.requireEntry(copy.id), true);
+    expect(props.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect(props.properties).toEqual({ folio_wiki_properties: 'disabled', labels: ['legacy'] });
+    expect(await fs.readFile((await storage.requireEntry(template)).absPath, 'utf8')).toBe(source);
+  });
+
   it('ids follow a Folio move, a folder move, a slug rename and an external rename', async () => {
     const { slug, content } = await connect(`${RUN} Move`, SEED, 'docs');
     const ids = await idsByPath(slug);
