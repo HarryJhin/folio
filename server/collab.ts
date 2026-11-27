@@ -2763,6 +2763,45 @@ export class RevisionConflictError extends HttpError {
 }
 
 /**
+ * Establish the reviewed room outside the file lock: seeding, closing and pending
+ * persistence can acquire that lock. The callback checks again under the lock and
+ * just before the atomic rename while the websocket may still accept edits.
+ */
+export async function withReviewedBody<T>(id: string, revision: string, write: (check: (diskBody: string) => void) => Promise<T>): Promise<T> {
+  const roomChanged = Symbol('room changed');
+  for (;;) {
+    const transition = closingPromises.get(id) ?? seedingPromises.get(id);
+    if (transition) {
+      await transition;
+      continue;
+    }
+    const room = docs.get(id);
+    const checkLive = (): string | undefined => {
+      const live = room?.getText('content').toString();
+      if (live !== undefined) {
+        const current = bodyRevision(live);
+        if (current !== revision) throw new RevisionConflictError(current);
+      }
+      return live;
+    };
+    checkLive();
+    if (room) await writers.get(id)?.settle();
+    try {
+      return await write((diskBody) => {
+        if (room !== docs.get(id) || closingPromises.has(id) || seedingPromises.has(id)) throw roomChanged;
+        const live = checkLive();
+        // The file writer preserves its final newline even if Y.Text has none.
+        if (live !== undefined && storage.docFileBody(normalizeEol(diskBody)) === storage.docFileBody(normalizeEol(live))) return;
+        const diskRevision = bodyRevision(diskBody);
+        if (diskRevision !== revision) throw new RevisionConflictError(diskRevision);
+      });
+    } catch (error) {
+      if (error !== roomChanged) throw error;
+    }
+  }
+}
+
+/**
  * Routes a PUT's markdown through the live Y.Doc (full-text replace inside a
  * transaction) instead of writing the file directly. The doc's own 'update'
  * listener (attached in bindState) picks this up and debounces the disk
@@ -2816,7 +2855,7 @@ export async function applyMarkdownUpdate(id: string, rawMarkdown: string, overr
   }
   await persistIconCover();
   if (changed) await backupRoomText(id, 'body replaced through the API', before);
-  if (entry) await storage.patchEntryContent(entry, markdown);
+  if (entry) await storage.withDocFileLock(id, () => storage.patchEntryContent(entry, markdown));
   return true;
 }
 
@@ -2903,7 +2942,7 @@ export async function applyH1Rename(id: string, title: string): Promise<boolean>
   if (entry.isIndex && entry.dirPath === '') {
     await storage.noteSpaceNameChange(entry.space, storage.extractH1(updated) ?? title);
   }
-  await storage.patchEntryContent(entry, updated);
+  await storage.withDocFileLock(id, () => storage.patchEntryContent(entry, updated));
   return true;
 }
 

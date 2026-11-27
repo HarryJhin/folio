@@ -13,6 +13,7 @@
  * The weekly limit is read from the `notifications` table, not from memory: a restart
  * (a deploy is a restart) must not make every overdue page ring again.
  */
+import { readFile } from 'node:fs/promises';
 import type { PropertyType } from '../shared/contracts.js';
 import {
   addDays,
@@ -25,10 +26,12 @@ import {
   REVIEW_BY_KEY,
   todayDay,
   VERIFIED_KEY,
+  wikiPropertiesFor,
   type PageVerification,
 } from '../shared/verification.js';
 import { query, queryOne } from './db/pool.js';
-import { badRequest } from './errors.js';
+import { badRequest, HttpError } from './errors.js';
+import { readFrontmatterBlock } from './frontmatter.js';
 import { deliverToPage } from './notifications/dispatch.js';
 import * as notificationStore from './notifications/store.js';
 import { mergePropertyPatch, propertiesStoreOf, readPageProperties, savePageProperties } from './properties.js';
@@ -48,6 +51,7 @@ const VERIFICATION_TYPES: Record<string, PropertyType> = {
 
 /** What the owner / deadline fields and the button can ask for. */
 export interface VerificationPatch {
+  baseRevision?: string;
   /** A username to make the owner, or null to remove the owner. */
   owner?: string | null;
   /** The next review day (`YYYY-MM-DD`), or null to remove the deadline. */
@@ -92,6 +96,10 @@ function daysBetween(from: unknown, to: unknown): number | null {
  */
 export async function updateVerification(entry: PageIndexEntry, user: Parameters<typeof savePageProperties>[1], patch: VerificationPatch, now: Date = new Date()): Promise<VerificationResult> {
   if (propertiesStoreOf(entry.kind) === 'none') throw badRequest('this page has no properties');
+  const guardedStamp = entry.kind === 'doc' && patch.markVerified === true;
+  if (guardedStamp && patch.baseRevision === undefined) {
+    throw new HttpError(428, 'read the document and send its bodyRevision as baseRevision to verify it', 'revision_required');
+  }
   const current = await readPageProperties(entry, true);
   if (!current.canEdit) throw badRequest('the properties of this page cannot be edited (its front matter or sidecar cannot be parsed); fix it in the file first');
 
@@ -125,7 +133,7 @@ export async function updateVerification(entry: PageIndexEntry, user: Parameters
   }
   if (Object.keys(props).length === 0) return { written: false, verification: storage.toPageMeta(await storage.requireEntry(entry.id)).verification ?? null };
 
-  const result = await savePageProperties(entry, user, { properties: mergePropertyPatch(entry.kind, current.properties, props), etag: current.etag }, { source: 'verification' });
+  const result = await savePageProperties(entry, user, { properties: mergePropertyPatch(entry.kind, current.properties, props), etag: current.etag }, { source: 'verification' }, guardedStamp ? patch.baseRevision : undefined);
   if (result.written) await ensureVerificationTypes(entry.space, { name: user.name, email: user.email });
   const fresh = await storage.requireEntry(entry.id);
   return { written: result.written, verification: storage.toPageMeta(fresh).verification ?? null };
@@ -150,6 +158,7 @@ export interface ReminderRun {
 }
 
 interface CandidateRow {
+  kind: PageIndexEntry['kind'];
   id: string;
   space_slug: string;
   frontmatter: unknown;
@@ -161,6 +170,28 @@ async function activeUsersByUsername(usernames: string[]): Promise<Map<string, s
   if (usernames.length === 0) return new Map();
   const rows = await query<{ id: string; username: string }>('SELECT id, username FROM users WHERE username = ANY($1::text[]) AND NOT disabled AND NOT is_system', [usernames]);
   return new Map(rows.map((r) => [r.username.toLowerCase(), r.id]));
+}
+
+async function deliverReviewReminder(row: CandidateRow, verification: PageVerification, since: Date, run: ReminderRun): Promise<void> {
+  run.overdue++;
+  const recent = await queryOne<{ id: string }>(
+    `SELECT id FROM notifications WHERE kind = 'review_due' AND page_id = $1 AND created_at > $2 LIMIT 1`,
+    [row.id, since.toISOString()],
+  );
+  if (recent) {
+    run.throttled++;
+    return;
+  }
+  const payload = { reviewBy: verification.reviewBy, daysOverdue: verification.daysOverdue, ...(verification.owner ? { owner: verification.owner } : {}) };
+  const ownerId = verification.owner ? (await activeUsersByUsername([verification.owner])).get(verification.owner) : undefined;
+  let told = ownerId ? await deliverToPage([ownerId], 'review_due', row.id, payload) : [];
+  if (told.length === 0) told = await deliverToPage(await notificationStore.listSpaceAdminIds(row.space_slug), 'review_due', row.id, { ...payload, toAdmins: true });
+  if (told.length) {
+    run.reminded++;
+    run.notifications += told.length;
+  } else {
+    run.unreachable++;
+  }
 }
 
 let running = false;
@@ -176,7 +207,7 @@ export async function runReviewReminders(now: Date = new Date()): Promise<Remind
   try {
     // Not a date comparison in SQL: the value is hand-edited and a bad date would fail the whole query.
     const rows = await query<CandidateRow>(
-      `SELECT id, space_slug, frontmatter, updated_at
+      `SELECT id, kind, space_slug, frontmatter, updated_at
          FROM pages_index
         WHERE jsonb_typeof(frontmatter) = 'object'
           AND frontmatter ? 'review_by'
@@ -186,39 +217,25 @@ export async function runReviewReminders(now: Date = new Date()): Promise<Remind
     );
     run.checked = rows.length;
 
-    const due: Array<{ row: CandidateRow; verification: PageVerification }> = [];
-    for (const row of rows) {
-      const verification = computeVerification(pickVerificationProps(row.frontmatter), new Date(row.updated_at).toISOString(), now);
-      if (verification?.state === 'overdue') due.push({ row, verification });
-    }
-    run.overdue = due.length;
-    if (due.length === 0) return run;
-
     const since = new Date(now.getTime() - REVIEW_REMINDER_INTERVAL_DAYS * DAY_MS);
-    const recent = await query<{ page_id: string }>(
-      `SELECT DISTINCT page_id FROM notifications WHERE kind = 'review_due' AND page_id = ANY($1::text[]) AND created_at > $2`,
-      [due.map((d) => d.row.id), since.toISOString()],
-    );
-    const alreadyReminded = new Set(recent.map((r) => r.page_id));
-    const owners = await activeUsersByUsername([...new Set(due.map((d) => d.verification.owner).filter((o): o is string => !!o))]);
-
-    for (const { row, verification } of due) {
-      if (alreadyReminded.has(row.id)) {
-        run.throttled += 1;
-        continue;
-      }
+    for (const row of rows) {
+      const candidate = computeVerification(pickVerificationProps(row.frontmatter), new Date(row.updated_at).toISOString(), now);
+      if (candidate?.state !== 'overdue') continue;
       try {
-        const payload = { reviewBy: verification.reviewBy, daysOverdue: verification.daysOverdue, ...(verification.owner ? { owner: verification.owner } : {}) };
-        const ownerId = verification.owner ? owners.get(verification.owner) : undefined;
-        // The owner first; a missing, disabled or no longer reading owner leaves the page with the space's admins.
-        let told = ownerId ? await deliverToPage([ownerId], 'review_due', row.id, payload) : [];
-        if (told.length === 0) told = await deliverToPage(await notificationStore.listSpaceAdminIds(row.space_slug), 'review_due', row.id, { ...payload, toAdmins: true });
-        if (told.length > 0) {
-          run.reminded += 1;
-          run.notifications += told.length;
-        } else {
-          run.unreachable += 1;
+        if (row.kind !== 'doc') {
+          await deliverReviewReminder(row, candidate, since, run);
+          continue;
         }
+        // Selection is only a hint. Read the file and commit recipient rows before a toggle
+        // can pass this same lock. A file that was archived, moved or became unreadable is skipped.
+        await storage.withDocFileLock(row.id, async () => {
+          const page = await storage.getEntry(row.id);
+          if (!page || page.kind !== 'doc' || page.status === 'archived' || page.relPath.startsWith('_templates/')) return;
+          const block = readFrontmatterBlock(await readFile(page.absPath, 'utf8'));
+          if (!block.parseable || block.data.status === 'archived' || !wikiPropertiesFor(page.kind, block.data)?.enabled) return;
+          const current = computeVerification(pickVerificationProps(block.data), page.updatedAt, now);
+          if (current?.state === 'overdue') await deliverReviewReminder({ ...row, space_slug: page.space }, current, since, run);
+        });
       } catch (err) {
         // One page's failure must not stop the others; it is tried again tomorrow.
         // eslint-disable-next-line no-console
