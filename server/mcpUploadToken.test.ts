@@ -39,7 +39,7 @@ describe('mcp upload token', () => {
     const flip = (c: string) => (c === 'A' ? 'B' : 'A');
     const dot = token.lastIndexOf('.');
     const body = `${flip(token[0]!)}${token.slice(1, dot)}${token.slice(dot)}`;
-    const sig = `${token.slice(0, -1)}${flip(token.at(-1)!)}`;
+    const sig = `${token.slice(0, dot + 1)}${flip(token[dot + 1]!)}${token.slice(dot + 2)}`;
     expect(verifyUploadToken(body)).toBeNull();
     expect(verifyUploadToken(sig)).toBeNull();
   });
