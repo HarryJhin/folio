@@ -6,6 +6,10 @@
  */
 import { createRequire } from 'node:module';
 import * as fs from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import WebSocket from 'ws';
 import * as Y from 'yjs';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseBaseConfig } from '../shared/bases/parse.js';
@@ -13,13 +17,14 @@ import type { User } from '../shared/contracts.js';
 import { userViewer } from './accessSql.js';
 import { queryBase } from './bases/query.js';
 import * as authStore from './auth/store.js';
-import { query } from './db/pool.js';
+import { newListenClient, query } from './db/pool.js';
 import { deleteTestSpace, setUpTestSchema } from './db/testSchema.js';
 import { listNotifications } from './notifications/routes.js';
 import { readDeclaredTypes } from './propertyTypes.js';
 import * as storage from './storage.js';
 import * as collab from './collab.js';
 import * as dispatch from './notifications/dispatch.js';
+import { PROPERTIES_SIGNAL_CHANNEL } from './propertiesSignal.js';
 import { countRecentReviewReminders, runReviewReminders, updateVerification } from './verification.js';
 
 const liveDocs = (createRequire(import.meta.url)('y-websocket/bin/utils') as { docs: Map<string, Y.Doc> }).docs;
@@ -163,6 +168,68 @@ describe('page verification (real PG + git)', () => {
       liveDocs.delete(id);
       room.destroy();
     }
+  });
+
+  it('waits for a closing room to persist its last edit and rejects the staged stamp without an audit or a properties signal', async () => {
+    const id = await newPage('Closing room');
+    const entry = await storage.requireEntry(id);
+    const body = await storage.readFreshDocBody(id);
+    const edit = 'Last edit before disconnect.\n';
+    const revision = collab.bodyRevision(body);
+    const session = await authStore.createSession(editor.id);
+    const server = createServer();
+    collab.initCollab();
+    collab.attachToServer(server);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/collab/${id}`, { headers: { cookie: `folio_session=${session.token}` } });
+    const connected = once(socket, 'message');
+    const listener = newListenClient();
+    const signals: string[] = [];
+    listener.on('notification', event => {
+      if (event.channel === PROPERTIES_SIGNAL_CHANNEL && JSON.parse(event.payload!).id === id) signals.push(event.payload!);
+    });
+    try {
+      await connected; // The first sync frame follows the completed seed and registration of this socket.
+      await listener.connect();
+      await listener.query(`LISTEN ${PROPERTIES_SIGNAL_CHANNEL}`);
+      const roomText = liveDocs.get(id)!.getText('content');
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      vi.mocked(fs.chmod).mockImplementationOnce(async (path, mode) => {
+        await actual.chmod(path, mode);
+        roomText.insert(roomText.length, edit);
+        socket.close();
+        // The last socket evicts the room immediately. Its pending flush needs the lock held by verification.
+        await vi.waitFor(() => expect(collab.isDocLive(id)).toBe(false));
+      });
+      await expect(updateVerification(entry, editor, { owner: owner.username!, markVerified: true, baseRevision: revision }))
+        .rejects.toMatchObject({ status: 409, code: 'revision_conflict', currentRevision: collab.bodyRevision(body + edit) });
+      expect(await storage.readFreshDocBody(id)).toBe(body + edit);
+      expect(await fs.readFile(entry.absPath, 'utf8')).not.toMatch(/^(?:owner|verified|review_by):/m);
+      expect(await verificationOf(id)).toBeUndefined();
+      expect(await query("SELECT 1 FROM audit_log WHERE action = 'page.properties' AND target = $1", [id])).toEqual([]);
+      await listener.query('SELECT 1'); // Drain notifications committed through the end of the rejected request.
+      expect(signals).toHaveLength(0);
+      const current = await updateVerification(entry, editor, { markVerified: true, baseRevision: await revisionOf(id) });
+      expect(current.written).toBe(true);
+      await vi.waitFor(() => expect(signals).toHaveLength(1));
+    } finally {
+      socket.terminate();
+      await listener.end();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('keeps table verification and weekly reminders working without a document revision', async () => {
+    const { id } = await storage.createPage({ space: slug, parentPath: '', title: 'Review table', kind: 'table' });
+    const entry = await storage.requireEntry(id);
+    const result = await updateVerification(entry, editor, { owner: owner.username!, markVerified: true, reviewBy: '2000-01-01' });
+    expect(result).toMatchObject({ written: true, verification: { owner: owner.username, state: 'overdue' } });
+    await runReviewReminders();
+    await runReviewReminders();
+    const feed = (await listNotifications(owner)).items.filter(n => n.kind === 'review_due' && n.pageId === id);
+    expect(feed).toHaveLength(1);
+    expect(feed[0].payload).toMatchObject({ reviewBy: '2000-01-01' });
   });
 
   it('checks current file eligibility inside the page lock before inserting a reminder', async () => {
