@@ -19,6 +19,7 @@ import { queryBase } from './bases/query.js';
 import * as authStore from './auth/store.js';
 import { newListenClient, query } from './db/pool.js';
 import { deleteTestSpace, setUpTestSchema } from './db/testSchema.js';
+import { writeFrontmatterKeys } from './frontmatter.js';
 import { listNotifications } from './notifications/routes.js';
 import { readDeclaredTypes } from './propertyTypes.js';
 import * as storage from './storage.js';
@@ -259,6 +260,28 @@ describe('page verification (real PG + git)', () => {
     await storage.rewriteDocFrontmatter(id, raw => raw.replace('---\n', '---\nfolio_wiki_properties: disabled\n'));
     await runReviewReminders();
     expect(await countRecentReviewReminders(id)).toBe(1);
+  });
+
+  it('skips archived documents and templates, and falls back to an admin when the owner loses access', async () => {
+    const archived = await newPage('Archived review');
+    const template = (await storage.createPage({ space: slug, parentPath: '_templates', title: 'Review template', kind: 'doc' })).id;
+    const revoked = await newPage('Former owner access');
+    await authStore.setMembership(slug, outsider.id, 'viewer');
+    const due = { owner: outsider.username!, review_by: '2000-01-01' };
+    await writeProps(archived, due);
+    await writeProps(template, due);
+    await writeProps(revoked, due);
+    await authStore.removeMembership(slug, outsider.id);
+    // The index still lists this document as eligible. The current file has been archived.
+    const { absPath } = await storage.requireEntry(archived);
+    const raw = await fs.readFile(absPath, 'utf8');
+    await fs.writeFile(absPath, writeFrontmatterKeys(raw, new Map([['status', { set: 'archived' }]])));
+    await runReviewReminders();
+    expect(await countRecentReviewReminders(archived)).toBe(0);
+    expect(await countRecentReviewReminders(template)).toBe(0);
+    expect(await countRecentReviewReminders(revoked)).toBe(1);
+    expect((await listNotifications(admin)).items.find(n => n.pageId === revoked)).toMatchObject({ payload: { toAdmins: true } });
+    expect((await listNotifications(outsider)).items.some(n => n.pageId === revoked)).toBe(false);
   });
 
   it('refuses an owner that does not exist and a bad deadline, writing nothing', async () => {
