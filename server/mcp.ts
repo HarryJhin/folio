@@ -44,6 +44,7 @@ import { recordAudit } from './audit.js';
 import { isAgentPath } from './agentPath.js';
 import * as proposals from './proposals.js';
 import { guardReviewMode } from './mcpReviewGuard.js';
+import { registerRequestUploadTool } from './mcpUploads.js';
 import { findSkill, listTeamSkills, readSkillText, skillPromptName } from './mcpSkills.js';
 import { checkPageAgainstRules } from './writingRules.js';
 import { publicUrlOrOrigin } from './publicUrl.js';
@@ -141,6 +142,7 @@ export const MCP_WRITE_TOOL_NAMES: ReadonlySet<string> = new Set([
   'folio_table_delete_view',
   'convert_canvas_to_board',
   'publish_artifact',
+  'request_upload',
   'add_comment',
   'reply_comment',
 ]);
@@ -402,7 +404,7 @@ function boardAsText(summary: ReturnType<typeof boardSceneSummary>): string {
  * here) — returns an error string instead of throwing an HttpError. A public-site actor (actor.publicSpace) is a
  * viewer of that one published space and of nothing else: any other slug is `space not found`.
  */
-async function checkSpaceRole(actor: McpActor, space: string, min: SpaceRole): Promise<string | null> {
+export async function checkSpaceRole(actor: McpActor, space: string, min: SpaceRole): Promise<string | null> {
   const publicSpace = publicSpaceOf(actor);
   if (publicSpace !== undefined) {
     if (space !== publicSpace || !(await getPublicSpace(space))) return 'space not found';
@@ -423,7 +425,7 @@ async function checkSpaceRole(actor: McpActor, space: string, min: SpaceRole): P
  * error that would reveal the page exists) for anyone below space/instance admin. A public-site actor reads a page
  * only when it is in its one space AND in that space's public page set; everything else is `page not found`.
  */
-async function checkPageRole(actor: McpActor, id: string, min: SpaceRole): Promise<{ entry?: PageIndexEntry; error?: string }> {
+export async function checkPageRole(actor: McpActor, id: string, min: SpaceRole): Promise<{ entry?: PageIndexEntry; error?: string }> {
   let entry: PageIndexEntry;
   try {
     entry = await storage.requireEntry(id);
@@ -573,6 +575,10 @@ export function buildFolioMcpServer(actor: McpActor, options: { origin?: string;
   if (hasWriteScope) guardReviewMode(server);
   /** PUBLIC_URL when set, else the request's own origin; '' (relative links) only when neither is known. */
   const pageUrl = (space: string, id: string): string => `${publicUrlOrOrigin(options.origin ?? '')}/s/${encodeURIComponent(space)}/p/${encodeURIComponent(id)}`;
+
+  if (actor.publicSpace === undefined) {
+    registerRequestUploadTool(server, actor, { checkPageRole, checkSpaceRole, baseUrl: publicUrlOrOrigin(options.origin ?? '') });
+  }
 
   server.registerTool(
     'list_spaces',

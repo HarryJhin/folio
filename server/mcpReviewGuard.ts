@@ -10,6 +10,7 @@
  *
  * One wrapper around `registerTool` does it for the whole list, so a refused tool's own
  * code is untouched and a space in `direct` mode (the default) behaves exactly as before.
+ * `request_upload` takes `page`, not `id`, so this wrapper never sees its space: its handler refuses review spaces itself, after the role checks.
  * mcp.test.ts checks that every name in MCP_WRITE_TOOL_NAMES is classified here, so a new
  * write tool cannot be added without deciding which side of the switch it is on.
  */
@@ -46,6 +47,7 @@ export const REVIEW_REFUSED_TOOL_NAMES: ReadonlySet<string> = new Set([
   'folio_table_delete_view',
   'convert_canvas_to_board',
   'publish_artifact',
+  'request_upload',
 ]);
 
 /** The spaces a call touches: its `space` argument, and the space of its `id` page. */

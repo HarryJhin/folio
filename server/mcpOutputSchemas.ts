@@ -461,4 +461,17 @@ export const outputSchemas = {
     url: z.string().describe('Link to the page in Folio'),
     warnings: z.array(z.string()).describe('Non-fatal notes (e.g. a capability Folio does not provide)'),
   },
+  request_upload: {
+    uploads: z
+      .array(
+        z.looseObject({
+          name: z.string().describe('File name as requested'),
+          size: z.number().describe('Declared size in bytes'),
+          sha256: z.string().describe('Declared SHA-256, 64 lowercase hex characters'),
+          url: z.string().describe('PUT the file bytes to this URL; it carries its own signature'),
+          expiresAt: z.string().describe('When the URL stops working, ISO timestamp'),
+        }),
+      )
+      .describe('One upload target per requested file, in request order'),
+  },
 } as const;

@@ -62,7 +62,7 @@ const { setUpTestSchema, deleteTestSpace } = await import('../db/testSchema.js')
 const authStore = await import('../auth/store.js');
 const storage = await import('../storage.js');
 const pageAccess = await import('../pageAccess.js');
-const { buildAssistantTools, READ_SKILL_TOOL } = await import('./tools.js');
+const { buildAssistantTools, READ_SKILL_TOOL, MCP_ONLY_TOOL_NAMES } = await import('./tools.js');
 const { MCP_WRITE_TOOL_NAMES } = await import('../mcp.js');
 const { runCursorAssistant, ASSISTANT_BUILTIN_TOOLS } = await import('./cursorRuntime.js');
 const assistantStore = await import('./store.js');
@@ -390,6 +390,7 @@ describe('assistant tools only return what the user may read (real PG, in-proces
     const askNames = Object.keys((await tools(bob, 'ask')).tools).sort();
     expect(agentNames.filter((name) => !MCP_WRITE_TOOL_NAMES.has(name))).toEqual(askNames);
     for (const name of MCP_WRITE_TOOL_NAMES) {
+      if (MCP_ONLY_TOOL_NAMES.has(name)) continue;
       expect(agentNames, name).toContain(name);
       expect(askNames, name).not.toContain(name);
     }

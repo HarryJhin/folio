@@ -38,8 +38,9 @@ const MAX_TOOL_RESPONSE_CHARS = 120_000;
  * MCP tools the assistant is not offered. `search` and `fetch` exist only because ChatGPT deep research accepts tools
  * with exactly those names; they are thin wrappers over `search_pages` / `read_page` (same checks), so the model
  * would get duplicates, and a bare `fetch` reads like a web fetch to a model that has no URL tool.
+ * `request_upload` returns URLs that are filled by a PUT with an API token, and the assistant has no token to send.
  */
-export const MCP_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set(['search', 'fetch']);
+export const MCP_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set(['search', 'fetch', 'request_upload']);
 
 /**
  * `publish_artifact` (21.10.2026) is offered to the assistant, but without the inputs that make Folio fetch something
