@@ -576,7 +576,16 @@ describe('MCP tags, properties and bases (real PG + git)', () => {
     expect(metadata.propertyEtag).toEqual(expect.any(String));
     expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
     expect((await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: false, merge: true })).isError).toBe(true);
-    const off = ok(await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: false, etag: metadata.propertyEtag }));
+    const disable = { id, wikiPropertiesEnabled: false, etag: metadata.propertyEtag };
+    expect((await call(as(editor, ['read']), 'set_page_properties', disable)).isError).toBe(true);
+    await query("UPDATE spaces SET agent_write_mode = 'review' WHERE slug = $1", [slug]);
+    try {
+      expect((await call(as(editor), 'set_page_properties', disable)).isError).toBe(true);
+      expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+    } finally {
+      await query("UPDATE spaces SET agent_write_mode = 'direct' WHERE slug = $1", [slug]);
+    }
+    const off = ok(await call(as(editor), 'set_page_properties', disable));
     expect(off.wikiProperties).toEqual({ enabled: false, keys: [] });
     expect(off.properties).toEqual({ ...metadata.properties, folio_wiki_properties: 'disabled' });
     expect(ok(await call(as(viewer), 'read_page', { id })).wikiProperties).toEqual(off.wikiProperties);
