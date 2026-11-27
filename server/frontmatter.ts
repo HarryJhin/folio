@@ -18,9 +18,11 @@
  * for ANY top-level key: set, add, remove — see its own comment.
  */
 import * as matterNS from 'gray-matter';
+import * as yamlModule from 'js-yaml';
 
 // Same CJS interop fallback as storage.ts.
 const matter = (typeof matterNS === 'function' ? matterNS : (matterNS as unknown as { default: typeof matterNS }).default) as typeof matterNS;
+const yaml = (yamlModule as unknown as { default?: typeof yamlModule }).default ?? yamlModule;
 
 /** Folio's own front matter keys, in the order a freshly written block lists them. */
 export const FOLIO_FRONTMATTER_KEYS = ['id', 'order', 'status', 'icon', 'cover'] as const;
@@ -246,7 +248,7 @@ interface Block {
 
 /** The leading `---` block of `raw`, or undefined when there is none (or it is never closed). */
 function locateBlock(raw: string): Block | undefined | 'unterminated' {
-  const first = /^(---[ \t]*)(\r?\n)/.exec(raw);
+  const first = /^(\uFEFF?---[ \t]*)(\r?\n)/.exec(raw);
   if (!first) return undefined;
   const eol = first[2];
   const lines: string[] = [];
@@ -434,15 +436,33 @@ export interface FrontmatterBlockInfo {
   parseable: boolean;
 }
 
+// A YAML alias can point back at an ancestor. Such a graph has no JSON properties representation.
+function hasRecursiveAlias(value: unknown, visiting: Set<object>, done: Set<object>): boolean {
+  if (value === null || typeof value !== 'object' || done.has(value)) return false;
+  if (visiting.has(value)) return true;
+  visiting.add(value);
+  if (Object.values(value).some(child => hasRecursiveAlias(child, visiting, done))) return true;
+  visiting.delete(value);
+  done.add(value);
+  return false;
+}
+
 export function readFrontmatterBlock(raw: string): FrontmatterBlockInfo {
   const block = locateBlock(raw);
   if (block === undefined) return { text: '', data: {}, parseable: true };
   if (block === 'unterminated') return { text: raw, data: {}, parseable: false };
+  const text = raw.slice(0, block.end);
   try {
-    return { text: raw.slice(0, block.end), data: parseFile(raw).data, parseable: true };
+    const data = parseFile(raw).data;
+    // gray-matter turns an explicit YAML null into {}. An empty or comment-only block, in contrast, can take keys.
+    if (Object.prototype.toString.call(data) !== '[object Object]' ||
+        (Object.keys(data).length === 0 && yaml.load(block.lines.join('\n')) === null) ||
+        (text.includes('*') && hasRecursiveAlias(data, new Set(), new Set()))) return { text, data: {}, parseable: false };
+    return { text, data, parseable: true };
   } catch {
-    return { text: raw.slice(0, block.end), data: {}, parseable: false };
+    // A broken block is read-only.
   }
+  return { text, data: {}, parseable: false };
 }
 
 /** One key's change for writeFrontmatterKeys. `lines` replaces js-yaml's rendering of `set` (the caller's own spelling, e.g. an unquoted date). */
@@ -482,15 +502,71 @@ export function renderFrontmatterEntry(key: string, value: unknown): string[] {
  * comments and formatting of the block are lost then, never data or a body
  * byte. A block YAML refuses throws UnparseableFrontmatterError: nothing is
  * guessed about a block nobody can read. Returns `raw` itself when nothing
- * changes.
+ * changes. With preserveFormatting, edit a flow mapping in place or refuse
+ * the edit if keeping unrelated bytes cannot be verified.
  */
-export function writeFrontmatterKeys(raw: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>): string {
-  const out = writeKeys(raw, edits);
+export function writeFrontmatterKeys(raw: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>, preserveFormatting = false): string {
+  // gray-matter treats a leading UTF-8 BOM as a file encoding marker. Keep it ahead of any created or removed block.
+  const bom = raw.startsWith('\uFEFF') ? '\uFEFF' : '';
+  const out = bom + writeKeys(raw.slice(bom.length), edits, preserveFormatting);
   // Mixed line endings: every line keeps its own (see keepLineEndings).
   return out !== raw && hasMixedEol(raw) ? keepLineEndings(raw, out) : out;
 }
 
-function writeKeys(raw: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>): string {
+export class FrontmatterFormattingError extends Error {
+  constructor() {
+    super('cannot edit these properties without rewriting the formatting of other front matter');
+  }
+}
+
+/** A flow mapping can keep unrelated bytes (including comments) if we edit the YAML parser's top-level key/value spans. */
+function editFlowMapping(source: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>, expected: Record<string, unknown>): string | undefined {
+  let depth = 0;
+  let opening = -1;
+  let start = 0;
+  const nodes: Array<{ start: number; end: number; key?: string }> = [];
+  try {
+    yaml.load(source, { listener(event, state) {
+      if (event === 'open') {
+        if (depth === 1 && source[state.position] === '{') opening = state.position;
+        if (depth === 2) start = state.position;
+        depth++;
+      } else if (--depth === 2 && opening !== -1) {
+        nodes.push({ start, end: state.position, key: state.kind === 'scalar' ? String(state.result) : undefined });
+      }
+    } });
+  } catch { return undefined; }
+  if (opening === -1 || nodes.length % 2) return undefined;
+  const changes: Array<{ from: number; to: number; text: string }> = [];
+  const seen = new Set<string>();
+  const format = (v: unknown) => yaml.dump(v, { flowLevel: 0, lineWidth: -1, noRefs: true }).trimEnd();
+  for (let i = 0; i < nodes.length; i += 2) {
+    const { key, start: keyStart } = nodes[i];
+    if (key === undefined) return undefined;
+    seen.add(key);
+    const edit = edits.get(key);
+    if (!edit) continue;
+    const value = nodes[i + 1];
+    const end = value.start + source.slice(value.start, value.end).trimEnd().length;
+    if ('set' in edit) {
+      changes.push({ from: value.start, to: end, text: format([expected[key]]).slice(1, -1) });
+    } else {
+      changes.push({ from: keyStart, to: end, text: '' });
+      const gap = source.slice(value.end, nodes[i + 2]?.start);
+      const comma = [...gap.matchAll(/#[^\r\n]*|,/g)].find(m => m[0] === ',');
+      if (comma) changes.push({ from: value.end + comma.index, to: value.end + comma.index + 1, text: '' });
+    }
+  }
+  const additions = Object.fromEntries([...edits].filter(([key, edit]) => !seen.has(key) && 'set' in edit).map(([key]) => [key, expected[key]]));
+  if (Object.keys(additions).length) {
+    const pairs = format(additions).slice(1, -1);
+    changes.push({ from: opening + 1, to: opening + 1, text: pairs + (nodes.length ? ',' : '') });
+  }
+  for (const c of changes.sort((a, b) => b.from - a.from)) source = source.slice(0, c.from) + c.text + source.slice(c.to);
+  return source;
+}
+
+function writeKeys(raw: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>, preserveFormatting: boolean): string {
   const block = locateBlock(raw);
   if (block === 'unterminated') throw new UnparseableFrontmatterError();
 
@@ -574,6 +650,11 @@ function writeKeys(raw: string, edits: ReadonlyMap<string, FrontmatterKeyEdit>):
     if (verified(candidate)) return candidate;
   }
 
+  if (preserveFormatting) {
+    const flow = editFlowMapping(raw.slice(block.openEnd, block.closeStart), edits, expected);
+    if (flow !== undefined && verified(head + flow + tail)) return head + flow + tail;
+    throw new FrontmatterFormattingError();
+  }
   // eslint-disable-next-line no-console
   console.warn('[frontmatter] could not edit the block in place; rewriting it from its parsed data (comments and formatting are not kept)');
   const fallback = Object.keys(expected).length === 0 ? [] : renderData(expected);
