@@ -26,6 +26,8 @@ import type {
   UnresolvedLinksResponse,
 } from '../../shared/contracts.js';
 import { query, queryOne } from '../db/pool.js';
+import { readPageProperties } from '../properties.js';
+import { getEntry, type PageIndexEntry } from '../storage.js';
 import { sqlParam, visiblePagesSql, type PageViewer } from '../accessSql.js';
 import { applyWikilinkCatalog, spaceWikilinkCatalog } from './wikilinkCatalog.js';
 import { APP_LINK_SHAPE, isWikiSyntax, unresolvedWikiPath } from './resolve.js';
@@ -197,7 +199,7 @@ async function resolveRepositoryWikilinks(space: string, links: PageLinkRef[], v
 }
 
 /** GET /api/pages/:id/meta and MCP get_page_metadata, for a page the caller may already read (the route checks). */
-export async function getPageMetadata(page: { id: string; space: string; relPath: string; title: string }, viewer: PageViewer): Promise<PageMetadata> {
+export async function getPageMetadata(page: Pick<PageIndexEntry, 'id' | 'space' | 'relPath' | 'title'> | PageIndexEntry, viewer: PageViewer): Promise<PageMetadata> {
   const row = await queryOne<{ frontmatter: Record<string, unknown> | null; meta_version: number }>('SELECT frontmatter, meta_version FROM pages_index WHERE id = $1', [page.id]);
   const headings = await query<PageHeading>('SELECT level, text, slug, line FROM page_headings WHERE page_id = $1 ORDER BY position', [page.id]);
   const blocks = await query<{ blockId: string; line: number }>('SELECT block_id AS "blockId", line FROM page_blocks WHERE page_id = $1 ORDER BY line, block_id', [page.id]);
@@ -216,6 +218,8 @@ export async function getPageMetadata(page: { id: string; space: string; relPath
     countParams,
   );
 
+  const entry = 'absPath' in page ? page : await getEntry(page.id);
+  const snapshot = entry?.kind === 'doc' ? await readPageProperties(entry, false) : undefined;
   return {
     id: page.id,
     space: page.space,
@@ -224,7 +228,9 @@ export async function getPageMetadata(page: { id: string; space: string; relPath
     headings,
     blocks,
     tags,
-    properties: row?.frontmatter ?? {},
+    properties: snapshot?.properties ?? row?.frontmatter ?? {},
+    ...(snapshot?.wikiProperties && { wikiProperties: snapshot.wikiProperties }),
+    ...(snapshot?.propertyEtag !== undefined && { propertyEtag: snapshot.propertyEtag }),
     links,
     backlinkCount: count?.n ?? 0,
     metaVersion: row?.meta_version ?? 0,

@@ -11,6 +11,10 @@
  * are plain strings for the same reason — the enums live in shared/contracts.ts and can grow.
  */
 import { z } from 'zod';
+import { wikiPropertiesSchema } from '../shared/contracts.js';
+
+const wikiProperties = wikiPropertiesSchema.optional().describe('Built-in wiki fields available on this document');
+const propertyEtag = z.string().nullable().optional().describe('Current document property write token. Null for a confirmed bare file, absent when no authoritative token is available.');
 
 export const pageMetaOutput = z.looseObject({
   id: z.string().describe('Page id'),
@@ -146,6 +150,7 @@ export const outputSchemas = {
   list_tree: { tree: z.array(treeNodeOutput).describe('Top-level pages of the space; each carries its children') },
   read_page: {
     ...pageMetaOutput.shape,
+    wikiProperties,
     markdown: z.string().optional().describe('Document body as Markdown (doc pages)'),
     bodyRevision: z.string().optional().describe('Doc pages: opaque revision of `markdown`. Pass it to update_page as baseRevision to refuse the write if the page changed since this read'),
     svg: z.string().optional().describe('Raw SVG source (board pages when no layout summary applies)'),
@@ -225,6 +230,8 @@ export const outputSchemas = {
       .describe('Links into the given page, one entry per link, with the source page'),
   },
   get_page_metadata: {
+    wikiProperties,
+    propertyEtag,
     id: z.string().describe('Page id'),
     space: z.string().describe('Space slug'),
     path: z.string().describe('Path relative to the space root'),
@@ -310,6 +317,8 @@ export const outputSchemas = {
     pagesSkipped: z.number().describe('Pages that carry the tag, that the caller can open but not edit (or that could not be written); they keep the old tag. Pages the caller cannot open are not counted'),
   },
   set_page_properties: {
+    wikiProperties,
+    propertyEtag,
     id: z.string().describe('Page id'),
     written: z.boolean().describe('False when the properties already were as asked: nothing was written'),
     changedKeys: z.array(z.string()).describe('Keys set or removed by this call'),

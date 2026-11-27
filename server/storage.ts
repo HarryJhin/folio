@@ -4140,11 +4140,15 @@ export async function writeBoardSvg(id: string, svg: string, force = false): Pro
   return toPageMeta(entry);
 }
 
-export async function readFreshDocBody(id: string): Promise<string> {
-  const entry = await requireEntry(id);
+export async function readFreshDocument(entry: PageIndexEntry): Promise<{ markdown: string; frontmatter: Record<string, unknown> }> {
   if (entry.kind !== 'doc') throw badRequest('page is not a document');
   const raw = await fs.readFile(entry.absPath, 'utf8');
-  return matter(raw).content;
+  const parsed = matter(raw, {});
+  return { markdown: parsed.content, frontmatter: parsed.data };
+}
+
+export async function readFreshDocBody(id: string): Promise<string> {
+  return (await readFreshDocument(await requireEntry(id))).markdown;
 }
 
 export async function readBoardSvg(id: string): Promise<string> {

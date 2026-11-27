@@ -535,4 +535,26 @@ describe('MCP tags, properties and bases (real PG + git)', () => {
       expect(Number(await git('rev-list', '--count', 'HEAD'))).toBe(commits + 1);
     });
   });
+
+  it('reads default fields and switches them without replacing other document properties', async () => {
+    const created = await storage.createPage({ space: slug, parentPath: '', title: 'Wiki fields', kind: 'doc' });
+    const id = created.id;
+    const pathOnDisk = (await storage.requireEntry(id)).absPath;
+    const original = await fs.readFile(pathOnDisk, 'utf8');
+    const detail = ok(await call(as(editor), 'read_page', { id }));
+    const metadata = ok(await call(as(editor), 'get_page_metadata', { id }));
+    expect(detail.wikiProperties).toEqual({ enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] });
+    expect(metadata.wikiProperties).toEqual(detail.wikiProperties);
+    expect(metadata.propertyEtag).toEqual(expect.any(String));
+    expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+    expect((await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: false, merge: true })).isError).toBe(true);
+    const off = ok(await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: false, etag: metadata.propertyEtag }));
+    expect(off.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect(off.properties).toEqual({ ...metadata.properties, folio_wiki_properties: 'disabled' });
+    expect(ok(await call(as(viewer), 'read_page', { id })).wikiProperties).toEqual(off.wikiProperties);
+    expect((await call(as(viewer), 'set_page_properties', { id, wikiPropertiesEnabled: true, etag: off.propertyEtag })).isError).toBe(true);
+    const on = ok(await call(as(editor), 'set_page_properties', { id, wikiPropertiesEnabled: true, merge: true, etag: off.propertyEtag }));
+    expect(on.properties).toEqual(metadata.properties);
+    expect(await fs.readFile(pathOnDisk, 'utf8')).toBe(original);
+  });
 });

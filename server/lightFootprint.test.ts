@@ -30,6 +30,7 @@ import { translitSlug } from './translit.js';
 import { readSpaceExportSettings, writeSpaceExportSettings } from './export/spaceSettings.js';
 import type { User } from '../shared/contracts.js';
 import { buildPageDoc } from './pageDoc.js';
+import { readPageProperties, savePageProperties } from './properties.js';
 
 git.__allowLocalRepoPathsForTests();
 const execFileAsync = promisify(execFile);
@@ -170,6 +171,28 @@ describe('light footprint for rootPath spaces (real PG + git)', () => {
     expect((await idsByPath(slug)).get(created.path)).toBe(created.id);
     expect((await storage.getEntry(introId))?.relPath).toBe('intro.md');
   }, 60_000);
+
+  it('reads four virtual fields on a bare file without changing Git and restores its bytes after a switch', async () => {
+    const { slug, repo, content } = await connect(`${RUN} Wiki fields`, SEED, 'docs');
+    const id = (await idsByPath(slug)).get('plain.md')!;
+    const entry = await storage.requireEntry(id);
+    const previous = await fs.stat(entry.absPath);
+    const baseline = await gitStatus(repo);
+    for (let read = 0; read < 2; read++) {
+      const props = await readPageProperties(entry, true);
+      expect(props).toMatchObject({ propertyEtag: null, properties: {}, wikiProperties: { enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] } });
+      expect((await buildPageDoc(entry)).verification).toBeUndefined();
+    }
+    expect((await fs.stat(entry.absPath)).mtimeMs).toBe(previous.mtimeMs);
+    expect(await gitStatus(repo)).toBe(baseline);
+    const off = await savePageProperties(entry, admin, { wikiPropertiesEnabled: false, etag: null });
+    expect(off.response.wikiProperties).toEqual({ enabled: false, keys: [] });
+    await storage.scanSpace(slug);
+    expect((await storage.requireEntry(id)).absPath).toBe(entry.absPath);
+    await savePageProperties(entry, admin, { wikiPropertiesEnabled: true, etag: off.response.propertyEtag });
+    expect(await fs.readFile(path.join(content, 'plain.md'), 'utf8')).toBe(SEED['docs/plain.md']);
+    expect(await gitStatus(repo)).toBe(baseline);
+  });
 
   it('ids follow a Folio move, a folder move, a slug rename and an external rename', async () => {
     const { slug, content } = await connect(`${RUN} Move`, SEED, 'docs');
