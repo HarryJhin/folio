@@ -1,6 +1,9 @@
 import { UI_LANGUAGE_CODES } from './uiLanguage.js';
 import { z } from 'zod';
 import type { AgentWriteMode } from './proposals.js';
+import { WIKI_PROPERTY_KEYS, type WikiProperties } from './verification.js';
+
+export const wikiPropertiesSchema = z.object({ enabled: z.boolean(), keys: z.array(z.enum(WIKI_PROPERTY_KEYS)) });
 
 /** Server port. Vite dev server (4871) proxies /api, /files and /collab here. */
 export const SERVER_PORT = 4870;
@@ -156,6 +159,7 @@ export type PageMeta = z.infer<typeof pageMetaSchema>;
  * `reviewDays` (default: the page's previous period, else 90).
  */
 export const updateVerificationBodySchema = z.object({
+  baseRevision: z.string().min(1).optional(),
   owner: z.string().max(100).nullable().optional(),
   reviewBy: z.string().max(40).nullable().optional(),
   markVerified: z.boolean().optional(),
@@ -183,6 +187,7 @@ export const OFFLINE_READER_ACCOUNT_HEADER = 'x-folio-offline-account';
 
 /** Full page payload: markdown body (frontmatter stripped) for docs, svg source for boards. */
 export const pageDocSchema = pageMetaSchema.extend({
+  wikiProperties: wikiPropertiesSchema.optional(),
   markdown: z.string().optional(),
   /** Docs: opaque revision of `markdown`; send it back as `baseRevision` in PUT to refuse the write if the body changed meanwhile. */
   bodyRevision: z.string().optional(),
@@ -640,6 +645,8 @@ export interface PageLinkRef {
 }
 /** GET /api/pages/:id/meta — viewer+ on the page; `.agent` pages admins only (requirePageRole). */
 export interface PageMetadata {
+  wikiProperties?: WikiProperties;
+  propertyEtag?: string | null;
   id: string;
   space: string;
   path: string;
@@ -1019,6 +1026,9 @@ export type UpdatePropertyTypesBody = z.infer<typeof updatePropertyTypesBodySche
 
 /** GET /api/pages/:id/properties — viewer+ (requirePageRole). */
 export interface PagePropertiesResponse {
+  wikiProperties?: WikiProperties;
+  /** Present only for a current, parseable document. Null means it has no front matter. */
+  propertyEtag?: string | null;
   /** The whole front matter as parsed (Folio keys included, foreign keys kept). */
   properties: Record<string, unknown>;
   /** Effective types (space types + inference for keys without a type). */
@@ -1064,10 +1074,11 @@ export interface PagePropertiesResponse {
  * with the last, ONE commit of that file (`settings: update|remove …`).
  */
 export const updatePagePropertiesBodySchema = z.object({
-  properties: z.record(z.string().min(1).max(100), z.unknown()),
+  properties: z.record(z.string().min(1).max(100), z.unknown()).optional(),
+  wikiPropertiesEnabled: z.boolean().optional(),
   /** Optimistic lock: the file's current etag (sha1 of the front matter block) from GET; mismatch → 409. */
   etag: z.string().nullable().optional(),
-});
+}).refine(body => body.properties !== undefined || body.wikiPropertiesEnabled !== undefined, 'provide properties or wikiPropertiesEnabled');
 export type UpdatePagePropertiesBody = z.infer<typeof updatePagePropertiesBodySchema>;
 
 // --- tags ---
