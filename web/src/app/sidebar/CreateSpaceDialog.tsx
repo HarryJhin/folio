@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router';
 import { spaceEntryPath } from '../lastSpace';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
-import type { GitCredentialInfo, SpaceImportProgress, SpaceList } from '@shared/contracts';
+import type { GitCredentialInfo, SpaceImportProgress } from '@shared/contracts';
 import { api, ApiError } from '../api';
 import { useApiErrorText } from '../errorText';
 import { useDebouncedValue } from '../hooks';
@@ -53,7 +53,6 @@ export function CreateSpaceDialog({ onClose, initialTab = 'empty' }: CreateSpace
   const errorText = useApiErrorText();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const fixedNavigation = queryClient.getQueryData<SpaceList>(['spaces'])?.navigationSpaceCount !== undefined;
   const [tab, setTab] = useState<Tab>(initialTab);
   const [name, setName] = useState('');
   // Round 19: once the user edits Name by hand, picking a (different) repo
@@ -260,7 +259,6 @@ export function CreateSpaceDialog({ onClose, initialTab = 'empty' }: CreateSpace
         </>
       }
     >
-      {fixedNavigation && <p className="mb-3 text-sm text-neutral-500">{t('sidebar.createSpace.directLinkHint')}</p>}
       <div role="tablist" className="mb-4 flex gap-1 rounded-md bg-neutral-100 p-1 dark:bg-neutral-800">
         <TabButton active={tab === 'empty'} onClick={() => setTab('empty')}>
           {t('sidebar.createSpace.tabEmpty')}

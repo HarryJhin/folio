@@ -5,10 +5,10 @@ export function configuredSpaceOrder() {
 
 /** Apply navigation preferences only after the caller has filtered the list for access. */
 export function spaceNavigation<T extends { slug: string }>(visible: T[]): {
-  spaces: T[]; primarySpaceCount?: number; navigationSpaceCount?: number; defaultSpace?: string;
+  spaces: T[]; defaultSpace?: string;
 } {
   const { primary: primaryOrder, references: referenceOrder } = configuredSpaceOrder();
-  if (!primaryOrder.length) return { spaces: visible };
+  if (!primaryOrder.length && !referenceOrder.length) return { spaces: visible };
   const remaining = new Map(visible.map(space => [space.slug, space]));
   const takeVisible = (order: string[]) => {
     const selected: T[] = [];
@@ -26,7 +26,5 @@ export function spaceNavigation<T extends { slug: string }>(visible: T[]): {
   return {
     defaultSpace: primary.find(space => space.slug === process.env.FOLIO_DEFAULT_SPACE)?.slug,
     spaces: [...primary, ...references, ...remaining.values()],
-    primarySpaceCount: primary.length || undefined,
-    navigationSpaceCount: referenceOrder.length ? primary.length + references.length : undefined,
   };
 }

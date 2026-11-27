@@ -102,8 +102,9 @@ export async function effectiveSpaceRole(subject: RoleSubject, space: string): P
 
 /** space slug -> effective role, for every space where `subject` has one. */
 export async function spaceRolesForUser(subject: RoleSubject): Promise<Record<string, SpaceRole>> {
-  if (subject.disabled) return {};
-  const out: Record<string, SpaceRole> = {};
+  // Membership keys come exclusively from the role resolver.
+  const out: Record<string, SpaceRole> = Object.create(null);
+  if (subject.disabled) return out;
   for (const [slug, sources] of await loadSpaceRoleSources(subject.id)) {
     const role = resolveSpaceRole(subject, sources);
     if (role) out[slug] = role;

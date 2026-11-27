@@ -63,9 +63,8 @@ function stubApi(opts: { vault?: boolean } = {}) {
 
 function Pathname() { return <output>{useLocation().pathname}</output>; }
 
-function renderDialog(fixedNavigation = false) {
+function renderDialog() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  if (fixedNavigation) queryClient.setQueryData(['spaces'], { spaces: [], navigationSpaceCount: 0 });
   render(
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
@@ -280,9 +279,9 @@ describe('CreateSpaceDialog — Obsidian vault note and light footprint', () => 
   });
 });
 
-it('gives the creator a bookmarkable first view outside a fixed switcher', async () => {
+it('opens the first view of a newly created space', async () => {
   stubApi();
-  renderDialog(true);
+  renderDialog();
   fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'New space' } });
   fireEvent.click(screen.getByRole('button', { name: 'Create' }));
   await waitFor(() => expect(screen.getByRole('status').textContent).toBe('/s/new-space/graph'));
