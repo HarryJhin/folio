@@ -117,6 +117,22 @@ describe('applyPagePropertiesFrame', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['page-properties', 'p1'] });
   });
 
+  it('a space-wide frame refreshes cached page badges even without a properties panel and defers pages being saved', () => {
+    const client = new QueryClient();
+    for (const [id, space] of [['open', 'demo'], ['saving', 'demo'], ['elsewhere', 'other']]) {
+      client.setQueryData(['page', id], { id, space, verified: true });
+    }
+    client.setQueryData(['page-properties', 'saving'], payload({}, 'e1'));
+    markSaving('saving', true);
+    applyPagePropertiesFrame(client, { type: 'page-properties', space: 'demo' });
+    expect(client.getQueryState(['page', 'open'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['page', 'elsewhere'])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(['page', 'saving'])?.isInvalidated).toBe(false);
+    markSaving('saving', false);
+    expect(client.getQueryState(['page', 'saving'])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(['page-properties', 'saving'])?.isInvalidated).toBe(true);
+  });
+
   it('a space-wide frame re-reads every open properties panel; base views of THAT space refresh once, after a short delay', () => {
     vi.useFakeTimers();
     const client = new QueryClient();
