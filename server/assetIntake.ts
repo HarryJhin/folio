@@ -28,7 +28,7 @@ export async function storeUploadedAsset(input: StoreUploadedAssetInput): Promis
   }
 
   const save = async (): Promise<{ url: string; path: string }> => {
-    const existing = input.reuseIdenticalInRepo ? await storage.findRepoAssetByContent(space, filename, sha256) : null;
+    const existing = input.reuseIdenticalInRepo ? await storage.findRepoAssetByContent(space, filename, sha256, size) : null;
     return existing ?? storage.saveAssetIntoRepo(space, filename, data);
   };
   const saved = input.reuseIdenticalInRepo ? await withSpaceLock(space, save) : await save();

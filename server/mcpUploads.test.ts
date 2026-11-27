@@ -132,6 +132,7 @@ describe('server/mcpUploads.ts — request_upload', () => {
     vi.stubEnv('FOLIO_DEMO_MODE', '1');
     const out = await requestUpload(actorOf(editor), { page: openPageId, files: [{ name: 'a.png', size: 10, sha256: SHA }] });
     expect(out.isError).toBe(true);
+    expect(out.text).toBe('MCP file uploads are disabled in the public demo');
   });
 
   it('refuses the whole call for one bad file', async () => {
@@ -145,6 +146,31 @@ describe('server/mcpUploads.ts — request_upload', () => {
     });
     expect(out.isError).toBe(true);
     expect(out.uploads).toBeUndefined();
+  });
+
+  it.each([
+    ['a name with a control character', 'a\u0001.png'],
+    ['a 256-byte name', `${'a'.repeat(252)}.png`],
+    ['a name of only forbidden characters', '???.pdf'],
+  ])('refuses the whole call for %s', async (_label, name) => {
+    const out = await requestUpload(actorOf(editor), {
+      page: openPageId,
+      files: [
+        { name: 'ok.png', size: 10, sha256: SHA },
+        { name, size: 10, sha256: SHA },
+      ],
+    });
+    expect(out.isError).toBe(true);
+    expect(out.uploads).toBeUndefined();
+  });
+
+  it.each([
+    ['a 255-byte name', `${'a'.repeat(251)}.png`],
+    ['a non-ASCII name', '보고서 최종.pdf'],
+  ])('accepts %s', async (_label, name) => {
+    const out = await requestUpload(actorOf(editor), { page: openPageId, files: [{ name, size: 10, sha256: SHA }] });
+    expect(out.isError).toBe(false);
+    expect(out.uploads?.[0]?.name).toBe(name);
   });
 
   it('accepts the maximum size and refuses one byte more', async () => {

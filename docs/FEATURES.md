@@ -1055,7 +1055,7 @@ work continues; come back and read on from where it stopped.
 ## 12. Integration for external tools (MCP)
 
 The `/mcp` endpoint with a personal access token (`folio_pat_…`), scopes
-`read` and `write`. 51 tools: listing spaces and trees, reading a page,
+`read` and `write`. 53 tools: listing spaces and trees, reading a page,
 search (plus `search` and `fetch` for ChatGPT deep research), creating and updating pages, resolving a Folio link, backlinks
 with context, a page's metadata (outline, tags, properties, links), a space's
 unresolved links and orphan pages, the link graph of a space or a page's neighbourhood, the rows of an Obsidian base (and creating or replacing one), publishing an interactive artifact, listing a space's templates and creating pages from them or saving a page as a template, checking a page against the space's writing rules, a space's tags and property keys, renaming a tag across a space, setting a page's properties, history and reading a page at a given

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -88,6 +89,28 @@ describe('storeUploadedAsset — real PG + real git', () => {
     const result = await storeUploadedAsset({ space, filename: 'a.png', data: bytesA, user, reuseIdenticalInRepo: true });
     expect(result.path).toBe('assets/a-3.png');
     expect(await assetFiles(space)).toEqual(['a-3.png', 'a.png']);
+  });
+
+  it('does not reuse a symlink with identical content', async () => {
+    const space = await newSpace('Intake Symlink', 'repo');
+    const dir = path.join(storage.getSpaceDir(space), 'assets');
+    await fs.mkdir(dir, { recursive: true });
+    const target = path.join(storage.getSpaceDir(space), 'outside.bin');
+    await fs.writeFile(target, bytesA);
+    await fs.symlink(target, path.join(dir, 'a.png'));
+    const result = await storeUploadedAsset({ space, filename: 'a.png', data: bytesA, user, reuseIdenticalInRepo: true });
+    expect(result.path).toBe('assets/a-2.png');
+    expect((await fs.lstat(path.join(dir, 'a-2.png'))).isFile()).toBe(true);
+  });
+
+  it('skips a family file whose size differs from the upload', async () => {
+    const space = await newSpace('Intake Size', 'repo');
+    const dir = path.join(storage.getSpaceDir(space), 'assets');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'a.png'), bytesA);
+    const sha256 = createHash('sha256').update(bytesA).digest('hex');
+    expect(await storage.findRepoAssetByContent(space, 'a.png', sha256, bytesA.length)).toEqual({ url: `/files/${space}/assets/a.png`, path: 'assets/a.png' });
+    expect(await storage.findRepoAssetByContent(space, 'a.png', sha256, bytesA.length + 1)).toBeNull();
   });
 
   it('grants the page even when the identical file came from another page', async () => {

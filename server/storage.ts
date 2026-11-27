@@ -244,12 +244,19 @@ export function isUnderTemplates(relPath: string): boolean {
  * board/space instead, so this is only still needed for uploaded asset
  * filenames below, where keeping the original name readable is what you want.
  */
-function sanitizeFilenameStem(input: string): string {
+function stripIllegalFilenameChars(input: string): string {
   const illegalChars = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
   let base = input.trim();
   for (const ch of illegalChars) base = base.split(ch).join('');
-  base = base.replace(/\s+/g, ' ').trim();
-  return base || `Board ${Date.now().toString(36)}`;
+  return base.replace(/\s+/g, ' ').trim();
+}
+
+function sanitizeFilenameStem(input: string): string {
+  return stripIllegalFilenameChars(input) || `Board ${Date.now().toString(36)}`;
+}
+
+export function isUsableAssetFilename(name: string): boolean {
+  return stripIllegalFilenameChars(path.basename(name, path.extname(name))) !== '';
 }
 
 function sanitizeAssetFilename(original: string): string {
@@ -6004,7 +6011,7 @@ export async function saveAssetIntoRepo(space: string, originalName: string, dat
   return { url: `/files/${space}/assets/${finalName}`, path: `assets/${finalName}` };
 }
 
-export async function findRepoAssetByContent(space: string, originalName: string, sha256: string): Promise<{ url: string; path: string } | null> {
+export async function findRepoAssetByContent(space: string, originalName: string, sha256: string, size: number): Promise<{ url: string; path: string } | null> {
   const assetsDir = path.join(spaceDir(space), 'assets');
   const safeName = sanitizeAssetFilename(originalName);
   const ext = path.extname(safeName);
@@ -6013,7 +6020,10 @@ export async function findRepoAssetByContent(space: string, originalName: string
   const family = new RegExp(`^${escape(stem)}(-\\d+)?${escape(ext)}$`);
   const names = (await fs.readdir(assetsDir).catch(() => [] as string[])).filter((name) => family.test(name)).sort();
   for (const name of names) {
-    const data = await fs.readFile(path.join(assetsDir, name)).catch(() => null);
+    const candidate = path.join(assetsDir, name);
+    const stat = await fs.lstat(candidate).catch(() => null);
+    if (!stat?.isFile() || stat.size !== size) continue;
+    const data = await fs.readFile(candidate).catch(() => null);
     if (data && createHash('sha256').update(data).digest('hex') === sha256) {
       return { url: `/files/${space}/assets/${name}`, path: `assets/${name}` };
     }

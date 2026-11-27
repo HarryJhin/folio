@@ -5,6 +5,7 @@ import { isDemoMode } from './demo.js';
 import type { McpActor, checkPageRole, checkSpaceRole } from './mcp.js';
 import { outputSchemas } from './mcpOutputSchemas.js';
 import * as proposals from './proposals.js';
+import { isUsableAssetFilename } from './storage.js';
 import { signUploadToken, uploadMaxBytes } from './mcpUploadToken.js';
 
 export const REQUEST_UPLOAD_TOOL = 'request_upload';
@@ -28,6 +29,13 @@ const DESCRIPTION =
 
 function errorResult(message: string): CallToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
+}
+
+const MAX_NAME_BYTES = 255;
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+function isValidUploadName(name: string): boolean {
+  return Buffer.byteLength(name, 'utf8') <= MAX_NAME_BYTES && !CONTROL_CHARACTER.test(name) && isUsableAssetFilename(name);
 }
 
 export function registerRequestUploadTool(server: McpServer, actor: McpActor, deps: RequestUploadDeps): void {
@@ -54,13 +62,16 @@ export function registerRequestUploadTool(server: McpServer, actor: McpActor, de
       },
     },
     async ({ page, files }) => {
-      if (isDemoMode()) return errorResult('uploads are not available in the demo');
+      if (isDemoMode()) return errorResult('MCP file uploads are disabled in the public demo');
       if (!actor.scopes.includes('write')) return errorResult('this action requires a token with write scope');
       const { entry, error } = await deps.checkPageRole(actor, page, 'editor');
       if (error || !entry) return errorResult(error ?? 'page not found');
       const spaceError = await deps.checkSpaceRole(actor, entry.space, 'editor');
       if (spaceError) return errorResult(spaceError);
       if ((await proposals.getAgentWriteMode(entry.space)) === 'review') return errorResult(proposals.reviewRefusal(`the tool ${REQUEST_UPLOAD_TOOL}`));
+
+      const badName = files.find((file) => !isValidUploadName(file.name));
+      if (badName) return errorResult(`file name "${badName.name}" is not valid: use at most 255 bytes, no control characters and at least one character besides / \\ : * ? " < > |`);
 
       const maxBytes = uploadMaxBytes();
       const tooLarge = files.find((file) => file.size > maxBytes);

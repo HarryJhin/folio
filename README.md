@@ -656,7 +656,7 @@ Without a key everything else in Folio works as usual.
 
 [![evergreen-it-dev/folio MCP server](https://glama.ai/mcp/servers/evergreen-it-dev/folio/badges/score.svg)](https://glama.ai/mcp/servers/evergreen-it-dev/folio)
 
-**MCP server.** 52 tools over `/mcp`: list and search spaces, read, write and move
+**MCP server.** 53 tools over `/mcp`: list and search spaces, read, write and move
 pages, build forms, edit data table columns and views, convert a canvas to a board, read a page's outline, tags, properties and links, list a space's tags and
 property keys, rename a tag, set page properties, find unresolved links
 and orphan pages, read the link graph, query, create and edit Obsidian bases, create and edit whiteboards, publish interactive artifacts, list templates and create pages from them, query and update data tables,
