@@ -19,9 +19,12 @@ export interface RequestUploadDeps {
 
 const DESCRIPTION =
   'Issues one signed, short-lived upload URL per file, so that a file can be attached to a page without passing its bytes through the model. ' +
-  'Send the bytes from a shell with PUT to each returned url: use the same Authorization header as for this MCP connection and Content-Type: application/octet-stream, for example `curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/octet-stream" --data-binary @file "<url>"`. ' +
-  'Read the token from an environment variable or a file; never write it on the command line or into any output. ' +
-  'Each url accepts exactly the name, size and sha256 declared here, once, and only until expiresAt. Requires a write-scoped token and the editor role on the page.';
+  'Send the bytes from a shell with PUT to each returned url, using the same API token as for this MCP connection and Content-Type: application/octet-stream, for example `curl --fail-with-body -X PUT -H @"$HEADER_FILE" -H "Content-Type: application/octet-stream" --data-binary @report.pdf "<url>"`. ' +
+  'HEADER_FILE names a file that holds the line `Authorization: Bearer <token>`: create it with mode 600 and delete it after sending. ' +
+  'Never put the token on the command line or into any output. ' +
+  'Each url accepts exactly the name, size and sha256 declared here, until expiresAt; sending the same bytes again stores no second copy. ' +
+  'Sending with a different token than the one that requested the url gets 403. ' +
+  "Requires a write-scoped token and the editor role in the page's space and on the page.";
 
 function errorResult(message: string): CallToolResult {
   return { content: [{ type: 'text', text: message }], isError: true };
