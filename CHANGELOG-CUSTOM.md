@@ -2,12 +2,9 @@
 
 Changes integrated into the `custom` branch, dated by source commit. The first entries cover the fork from `3fa892c` through `d361f0d`. [Compare the two revisions](https://github.com/HarryJhin/folio/compare/3fa892c37931a927228222c9956f3ddbb87e42ec...d361f0d6bc5d0adf5cbae71b1b5e22df86be50a5).
 
-## Pending integration
-
-- Markdown and MDX documents offer owner, verification date, next review and tags on first open. Turning off wiki properties on one document preserves its stored values and pauses reminders. Verification checks the displayed body revision. [Feature design](docs/design/2026-11-27-default-wiki-properties.md)
-
 ## 2026-11-27
 
+- Markdown and MDX documents offer owner, verification date, next review and tags on first open. Turning off wiki properties on one document preserves its stored values and pauses reminders. Verification checks the displayed body revision. [PR #11](https://github.com/HarryJhin/folio/pull/11)
 - Added Korean to the interface, including the editor and offline reader. [PR #10](https://github.com/HarryJhin/folio/pull/10)
 - The space switcher and MCP list every accessible space. [PR #9](https://github.com/HarryJhin/folio/pull/9)
 
