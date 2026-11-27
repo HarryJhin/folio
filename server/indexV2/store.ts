@@ -80,7 +80,7 @@ function clean(s: string | null): string | null {
 }
 
 /** The front matter as jsonb text: JSON-safe (dates become ISO strings), never failing the index over an odd value. */
-function frontmatterJson(frontmatter: Record<string, unknown> | null | undefined): string {
+export function frontmatterJson(frontmatter: Record<string, unknown> | null | undefined): string {
   if (!frontmatter) return '{}';
   try {
     return JSON.stringify(frontmatter).replace(/\\u0000/g, '');
