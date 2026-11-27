@@ -1223,6 +1223,8 @@ export type UpdateSpaceAssetModeBody = z.infer<typeof updateSpaceAssetModeBodySc
 export interface UploadAssetResponse {
   url: string;
   path?: string;
+  sha256?: string;
+  size?: number;
 }
 
 export interface McpUploadFileInput {
