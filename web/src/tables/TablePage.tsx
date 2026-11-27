@@ -3,6 +3,7 @@ import { Plus, Rows3, Search, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TableCellValue, TableColumn, TableDoc, TableRow, TableView } from '@shared/contracts';
 import './i18n/register';
+import { formatCalendarValue } from '../app/formatDate';
 import { track, trackEdit } from '../analytics';
 import { ViewTabs } from './views/ViewTabs';
 import { clearDraft, isDirty, loadDraft, makeView, saveDraft } from './views/viewDraft';
@@ -110,7 +111,7 @@ export function TablePage({
   comments,
   toolbarExtra,
 }: TableEditorProps) {
-  const { t } = useTranslation('tables');
+  const { t, i18n } = useTranslation('tables');
   const { doc, dispatch } = useDocState(incoming, onPatch, pageId);
 
   const readOnly = !canEdit(role);
@@ -168,9 +169,9 @@ export function TablePage({
     if (!view) return doc.rows;
     // filter → search → sort, matching the server's own order.
     const filtered = ignoreFilters ? doc.rows : applyFilters(doc.rows, doc.columns, view.filter);
-    const searched = applySearch(filtered, doc.columns, search);
+    const searched = applySearch(filtered, doc.columns, search, (value) => formatCalendarValue(value, i18n.language));
     return applySort(searched, doc.columns, view.sort);
-  }, [doc.rows, doc.columns, view, search, ignoreFilters]);
+  }, [doc.rows, doc.columns, view, search, ignoreFilters, i18n.language]);
 
   // ------------------------------------------------------------ selection
 

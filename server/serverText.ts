@@ -8,6 +8,8 @@
  * One JSON bundle per language in ./i18n/. Which languages exist is decided
  * by which files are there. English is the fallback.
  */
+import type { UiLanguage } from '../shared/contracts.js';
+import { DEFAULT_UI_LANGUAGE, UI_LANGUAGE_CODES } from '../shared/uiLanguage.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +47,16 @@ export type ServerTextKey =
   | 'oauth.deny'
   | 'oauth.errorTitle'
   | 'oauth.back'
+  | 'oauth.error.rateLimited'
+  | 'oauth.error.missingClientId'
+  | 'oauth.error.unknownClient'
+  | 'oauth.error.clientMetadata'
+  | 'oauth.error.details'
+  | 'oauth.error.missingRedirect'
+  | 'oauth.error.redirectMismatch'
+  | 'oauth.error.sessionEnded'
+  | 'oauth.error.invalidRequest'
+  | 'oauth.error.expiredRequest'
   | 'gitRepos.tokenInvalid'
   | 'gitRepos.rateLimited'
   | 'gitRepos.ssoRequired'
@@ -85,17 +97,25 @@ export function serverTextLanguages(): string[] {
 /**
  * The language to write in: the person's saved preference when there is a
  * bundle for it, else the first language their browser asks for that there
- * is a bundle for (Russian counts as Ukrainian), else English.
+ * is a bundle for (Russian counts as Ukrainian), else the instance default.
  */
-export function resolveTextLanguage(preferred?: string | null, acceptLanguage?: string | null): string {
-  if (preferred && BUNDLES.has(preferred)) return preferred;
-  for (const part of (acceptLanguage ?? '').split(',')) {
-    const tag = part.split(';')[0].trim().slice(0, 2).toLowerCase();
-    // Russian is not a language of the app: a Russian browser gets Ukrainian.
-    const base = tag === 'ru' ? 'uk' : tag;
-    if (base && BUNDLES.has(base)) return base;
+export function resolveTextLanguage(preferred?: string | null, acceptLanguage?: string | null): UiLanguage {
+  const supported = (value: string | null | undefined) => UI_LANGUAGE_CODES.find((code) => code === value && BUNDLES.has(code));
+  const saved = supported(preferred);
+  if (saved) return saved;
+  let selected: UiLanguage = DEFAULT_UI_LANGUAGE;
+  let highestQuality = 0;
+  for (const range of (acceptLanguage ?? '').split(',')) {
+    const [tag, weight] = range.trim().split(/\s*;\s*q\s*=\s*/i);
+    const base = tag.toLowerCase().split('-')[0];
+    const language = supported(base === 'ru' ? 'uk' : base);
+    const quality = weight === undefined ? 1 : Number(weight);
+    if (language && quality > highestQuality && quality <= 1) {
+      selected = language;
+      highestQuality = quality;
+    }
   }
-  return FALLBACK_LANGUAGE;
+  return selected;
 }
 
 export function serverText(key: ServerTextKey, language?: string | null): string {

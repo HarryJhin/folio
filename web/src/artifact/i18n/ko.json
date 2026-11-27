@@ -1,0 +1,93 @@
+{
+  "loading": "불러오는 중…",
+  "frameTitle": "{{title}}(아티팩트)",
+  "empty": "이 아티팩트에는 표시할 페이지가 없습니다.",
+  "emptyHint": "새 파일을 가져와 교체하거나 Claude 또는 Cursor에서 다시 게시하세요.",
+  "source": {
+    "claude": "Claude에서 가져옴",
+    "cursor": "Cursor에서 가져옴",
+    "url": "링크에서 가져옴",
+    "upload": "업로드한 파일",
+    "other": "출처",
+    "openOriginal": "원본 열기"
+  },
+  "toolbar": {
+    "fullscreen": "전체 화면",
+    "exitFullscreen": "전체 화면 종료",
+    "openInTab": "새 탭에서 열기",
+    "download": ".zip 다운로드",
+    "showSource": "소스 보기",
+    "replace": "교체…"
+  },
+  "partial": "Folio에서 {{what}} 기능을 사용할 수 없어 일부 기능만 작동합니다.",
+  "capability": {
+    "claude": "Claude 호출",
+    "network": "네트워크 요청",
+    "connectors": "커넥터",
+    "storage": "저장소"
+  },
+  "warningsTitle": "아티팩트 참고 사항 {{count}}개",
+  "sourceDialog": {
+    "title": "소스: {{name}}",
+    "loading": "소스 불러오는 중…",
+    "failed": "소스를 불러오지 못했습니다.",
+    "copy": "복사",
+    "copied": "복사됨"
+  },
+  "import": {
+    "title": "아티팩트",
+    "replaceTitle": "아티팩트 교체",
+    "name": "제목",
+    "namePlaceholder": "비워 두면 페이지 제목을 사용합니다",
+    "location": "위치",
+    "rootLabel": "스페이스 최상위",
+    "tabs": {
+      "link": "링크",
+      "file": "파일",
+      "paste": "HTML 붙여넣기"
+    },
+    "link": {
+      "label": "링크 또는 임베드 코드",
+      "placeholder": "https://… 또는 <iframe src=\"…\"></iframe>",
+      "hint": ".html, .zip, .svg, .md 파일에 직접 연결된 링크는 사본을 다운로드합니다. Claude 아티팩트는 ‘공유 → 임베드 코드 가져오기’에서 복사한 코드를 붙여넣으세요."
+    },
+    "file": {
+      "label": "파일",
+      "hint": ".html, .htm, .zip, .svg, .md를 지원합니다. .zip의 최상위에 index.html 또는 artifact.yaml이 있어야 합니다.",
+      "choose": "파일 선택…",
+      "none": "선택한 파일 없음"
+    },
+    "paste": {
+      "label": "HTML",
+      "placeholder": "<!doctype html>…"
+    },
+    "mcpHint": "Folio MCP를 연결한 Claude 또는 Cursor에서 “이 아티팩트를 Folio에 게시해 줘”라고 요청하세요.",
+    "create": "가져오기",
+    "creating": "가져오는 중…",
+    "replace": "교체",
+    "replacing": "교체 중…",
+    "cancel": "취소",
+    "created": "아티팩트를 가져왔습니다",
+    "replaced": "아티팩트를 교체했습니다",
+    "nothingToImport": "먼저 링크나 파일을 추가하거나 HTML을 붙여넣으세요.",
+    "useMcp": {
+      "title": "Claude 및 Cursor 페이지는 직접 다운로드할 수 없습니다",
+      "body": "Anthropic 약관에 따라 공유된 아티팩트를 복사할 수 없습니다. 다음 방법으로 가져올 수 있습니다.",
+      "optionEmbed": "Claude에서 아티팩트를 열고 ‘공유 → 임베드 코드 가져오기’를 선택한 뒤 ‘링크’ 탭에 코드를 붙여넣으세요.",
+      "optionMcp": "Folio MCP를 연결한 Claude 또는 Cursor에 이렇게 요청하세요.",
+      "prompt": "이 아티팩트를 Folio에 게시해 줘",
+      "copy": "요청 문구 복사",
+      "copied": "복사됨"
+    },
+    "errors": {
+      "badUrl": "링크에서 다운로드하지 못했습니다. 공개된 HTTP(S) 주소인지, 응답 시간이 너무 길지 않은지 확인하세요.",
+      "tooLarge": "파일이 너무 커서 가져올 수 없습니다.",
+      "tooManyFiles": "압축 파일 안에 파일이 너무 많습니다.",
+      "badZip": "압축 파일을 읽을 수 없거나 최상위에 index.html 또는 artifact.yaml이 없습니다.",
+      "badPath": "묶음에 안전하지 않은 경로의 파일이 있습니다.",
+      "noEntry": "표시할 페이지가 없습니다. HTML 페이지를 추가하세요.",
+      "unsupportedType": "지원하지 않는 파일 형식입니다.",
+      "generic": "아티팩트를 가져오지 못했습니다."
+    }
+  }
+}

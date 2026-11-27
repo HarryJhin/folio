@@ -6,7 +6,7 @@
  * bad timestamp renders as nothing rather than the string "Invalid Date".
  */
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatDateTime } from './formatDate';
+import { formatCalendarValue, formatDate, formatDateTime } from './formatDate';
 
 const AT = '2026-08-30T08:20:59.000Z';
 
@@ -52,5 +52,22 @@ describe('formatDate', () => {
 
   it('renders an unparseable value as empty', () => {
     expect(formatDate('nope', 'uk')).toBe('');
+  });
+});
+
+describe('Korean calendar fields', () => {
+  it('keeps date-only and floating wall times in their original calendar day', () => {
+    expect(formatCalendarValue('2026-11-27', 'ko')).toBe('2026. 11. 27.');
+    const wall = new Intl.DateTimeFormat('ko', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' });
+    for (const time of ['2026-11-27T15:05', '2026-11-27T00:01', '2026-03-08T02:30']) {
+      expect(formatCalendarValue(time, 'ko')).toBe(wall.format(new Date(time + 'Z')));
+    }
+    expect(formatCalendarValue('pending', 'ko')).toBe('pending');
+  });
+
+  it('shows explicitly zoned instants in the reader’s time zone', () => {
+    const iso = '2026-11-27T00:30:00+09:00';
+    const expected = new Intl.DateTimeFormat('ko', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+    expect(formatCalendarValue(iso, 'ko')).toBe(expected);
   });
 });

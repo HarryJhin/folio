@@ -6,10 +6,10 @@
  * every language; the text comes from the server bundles (server/i18n,
  * `starterTemplate.<stem>`).
  */
+import type { UiLanguage } from '../shared/contracts.js';
 import { serverText } from './serverText.js';
 
-export type StarterLanguage = 'en' | 'uk';
-
+export type StarterLanguage = UiLanguage;
 export interface StarterTemplate {
   /** File stem inside `_templates/`. */
   stem: string;

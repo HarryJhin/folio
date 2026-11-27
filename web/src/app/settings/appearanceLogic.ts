@@ -210,6 +210,7 @@ export function siteFieldErrors(value: SiteJson): Record<string, string> {
 }
 
 export const COMMON_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
+  { code: 'ko', label: '한국어 (ko)' },
   { code: 'en', label: 'English (en)' },
   { code: 'uk', label: 'Ukrainian (uk)' },
   { code: 'de', label: 'Deutsch (de)' },

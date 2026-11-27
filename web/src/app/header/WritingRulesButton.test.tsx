@@ -113,6 +113,7 @@ describe('writing-rules messages', () => {
   });
 
   it('names the answer language from the interface language: Ukrainian for uk, English otherwise', () => {
+    expect(writingRulesLanguageName('ko-KR')).toBe('Korean');
     expect(writingRulesLanguageName('uk')).toBe('Ukrainian');
     expect(writingRulesLanguageName('uk-UA')).toBe('Ukrainian');
     expect(writingRulesLanguageName('en')).toBe('English');

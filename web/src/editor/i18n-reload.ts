@@ -6,8 +6,10 @@
  * a language switch has to (a) invalidate the fields via an effect and (b) make
  * the widgets that render text compare languages in `eq()`.
  */
+import { DEFAULT_UI_LANGUAGE } from '@shared/uiLanguage';
 import i18next from 'i18next';
-import { StateEffect, type Extension } from '@codemirror/state';
+import koreanPhrases from './phrases/ko.json';
+import { EditorState, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { ViewPlugin, type EditorView } from '@codemirror/view';
 import { onLanguageChanged, t } from './i18n';
 
@@ -16,7 +18,7 @@ export const languageChangedEffect = StateEffect.define<string>();
 
 /** Language stamp for widget `eq()` comparisons. */
 export function currentLanguage(): string {
-  return i18next.language || 'uk';
+  return i18next.language || DEFAULT_UI_LANGUAGE;
 }
 
 /**
@@ -30,7 +32,15 @@ function publishCssStrings(): void {
   );
 }
 
-export const i18nReload: Extension = ViewPlugin.fromClass(
+const phraseLanguage = StateField.define<string>({
+  create: currentLanguage,
+  update(language, transaction) {
+    return transaction.effects.find((effect) => effect.is(languageChangedEffect))?.value ?? language;
+  },
+  provide: (field) => EditorState.phrases.from(field, (language) => language === 'ko' ? koreanPhrases : {}),
+});
+
+const reloadPlugin = ViewPlugin.fromClass(
   class {
     private readonly off: () => void;
 
@@ -47,3 +57,5 @@ export const i18nReload: Extension = ViewPlugin.fromClass(
     }
   },
 );
+
+export const i18nReload: Extension = [phraseLanguage, reloadPlugin];

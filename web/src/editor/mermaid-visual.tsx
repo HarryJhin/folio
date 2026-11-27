@@ -20,6 +20,7 @@ import mermaid from 'mermaid';
 import { tryReloadForStaleChunk } from '../app/stale-chunk';
 import { NS } from './i18n';
 import { attachCanvasAffordances } from './mermaid-plus';
+import { localizeVisimerControls } from './visimer-locale';
 import {
   addEntity,
   describeDiagram,
@@ -173,6 +174,7 @@ export function MermaidVisualPane({ code, onCodeChange }: MermaidVisualPaneProps
       sync();
       teardown.current.push(
         editor.on('change', sync),
+        localizeVisimerControls(view.container),
         attachCanvasAffordances({
           view,
           editor,

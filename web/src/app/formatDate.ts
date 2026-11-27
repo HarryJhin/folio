@@ -30,3 +30,28 @@ export function formatDateTime(value: string | number | Date, locale: string): s
 export function formatDate(value: string | number | Date, locale: string): string {
   return parse(value)?.toLocaleDateString(locale) ?? '';
 }
+
+const fieldFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** A calendar date or floating wall time keeps its own fields. Only an instant is converted to the viewer's time zone. */
+export function formatCalendarValue(value: string, locale: string, unzonedTime: 'wall' | 'utc' = 'wall'): string {
+  const match = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/i.exec(value);
+  if (!match) return value;
+  const [, day, clock, offset] = match;
+  const calendar = new Date(day);
+  if (Number.isNaN(calendar.getTime()) || calendar.toISOString().slice(0, 10) !== day) return value;
+  const date = clock ? new Date(`${day}T${clock}${offset || 'Z'}`) : calendar;
+  if (Number.isNaN(date.getTime())) return value;
+  const fixedFields = !clock || (!offset && unzonedTime === 'wall');
+  const key = `${locale}:${clock ? 'time' : 'day'}:${fixedFields ? 'UTC' : 'local'}`;
+  let formatter = fieldFormats.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, {
+      dateStyle: 'medium',
+      timeStyle: clock ? 'short' : undefined,
+      timeZone: fixedFields ? 'UTC' : undefined,
+    });
+    fieldFormats.set(key, formatter);
+  }
+  return formatter.format(date);
+}

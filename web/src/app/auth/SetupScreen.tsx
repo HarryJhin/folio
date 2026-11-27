@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api';
 import { useApiErrorText } from '../errorText';
+import { useDocumentTitle } from '../hooks';
 import { LabeledInput } from '../ui/LabeledInput';
 import '../i18n/register';
 
@@ -14,6 +15,7 @@ export interface SetupScreenProps {
 /** "First run" — shown while GET /api/auth/state reports needsSetup, creates the instance admin. Localized from localStorage/browser language, same reasoning as LoginScreen. */
 export function SetupScreen({ onDone }: SetupScreenProps) {
   const { t } = useTranslation('app');
+  useDocumentTitle(t('auth.setup.title'));
   const errorText = useApiErrorText();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -45,7 +47,7 @@ export function SetupScreen({ onDone }: SetupScreenProps) {
             onChange={(e) => setName(e.target.value)}
           />
           <LabeledInput
-            label="Email"
+            label={t('ui.email')}
             type="email"
             required
             autoComplete="email"

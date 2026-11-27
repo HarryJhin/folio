@@ -285,13 +285,22 @@ export function applyFilters(
  * numbers "compared as text" — extended here to all types, since excluding
  * e.g. dates from a "search everything" box would surprise users and the
  * spec doesn't call for excluding them).
+ * The grid can also match a date's displayed spelling, keeping the canonical
+ * value searchable in every locale and leaving API queries locale-independent.
  */
-export function applySearch(rows: TableRow[], cols: TableColumn[], q: string): TableRow[] {
+export function applySearch(
+  rows: TableRow[],
+  cols: TableColumn[],
+  q: string,
+  formatDate?: (value: string) => string,
+): TableRow[] {
   const needle = normalizeSearchText(q.trim());
   if (needle.length === 0) return rows;
-  return rows.filter((row) =>
-    cols.some((col) => normalizeSearchText(encodeCell(col, row.values[col.id] ?? null)).includes(needle)),
-  );
+  return rows.filter((row) => cols.some((col) => {
+    const text = encodeCell(col, row.values[col.id] ?? null);
+    if (normalizeSearchText(text).includes(needle)) return true;
+    return col.type === 'date' && text !== '' && !!formatDate && normalizeSearchText(formatDate(text)).includes(needle);
+  }));
 }
 
 /** Keep saved views consistent with the set of columns being serialized. */

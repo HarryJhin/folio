@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import i18next from 'i18next';
 import type { TableRow } from '@shared/contracts';
+import { UI_LANGUAGES } from '../i18n/languages';
 import { TablePage } from './TablePage';
 import { STATUS_OPTIONS, makeMockTableDoc } from './fixtures';
 import './i18n/register';
@@ -167,6 +168,25 @@ describe('TablePage — panels and search', () => {
     expect(screen.getAllByTestId('grid-row')).toHaveLength(5);
     fireEvent.change(screen.getByLabelText('Search the table'), { target: { value: 'mobile' } });
     await waitFor(() => expect(screen.getAllByTestId('grid-row')).toHaveLength(1));
+  });
+
+  it.each(UI_LANGUAGES)('finds both displayed and ISO dates within the sorted, filtered view (%s)', async (locale) => {
+    await i18next.changeLanguage(locale);
+    const doc = makeMockTableDoc();
+    const day = '2026-11-27';
+    for (const row of doc.rows) row.values.due = day;
+    doc.views[1].sort = [{ column: 'estimate', dir: 'asc' }];
+    renderPage({ doc });
+    await grid();
+    fireEvent.click(screen.getByRole('tab', { name: /In progress/ }));
+
+    const displayed = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(day));
+    const search = screen.getByRole('textbox', { name: i18next.t('tables:toolbar.search') });
+    for (const query of [day, displayed]) {
+      fireEvent.change(search, { target: { value: query } });
+      expect(screen.queryAllByTestId('grid-row').map((row) => row.getAttribute('data-row-id')))
+        .toEqual(['r7k2mq4e', 'r7k2mq4c', 'r7k2mq4b']);
+    }
   });
 
   it('search is diacritic- and case-insensitive', async () => {
