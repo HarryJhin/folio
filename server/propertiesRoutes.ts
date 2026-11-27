@@ -24,10 +24,12 @@ import { updatePagePropertiesBodySchema, updatePropertyTypesBodySchema, updateVe
 import { userViewer } from './accessSql.js';
 import { recordAudit } from './audit.js';
 import * as session from './auth/session.js';
+import { RevisionConflictError } from './collab.js';
 import { assertNotDemoAccount } from './demo.js';
 import { badRequest } from './errors.js';
 import { PropertiesConflictError, propertiesStoreOf, readPageProperties, savePageProperties } from './properties.js';
 import { readSpacePropertyTypes, writeSpacePropertyTypes } from './propertyTypes.js';
+import { assertTokenMayWriteDirect } from './proposals.js';
 import type { PageIndexEntry } from './storage.js';
 import { updateVerification } from './verification.js';
 import { parseBody } from './validate.js';
@@ -52,6 +54,9 @@ export function registerPropertiesRoutes(app: FastifyInstance): void {
     const entry = await session.requirePageRole(request, id, 'editor');
     session.requireWriteScope(request);
     if (propertiesStoreOf(entry.kind) === 'none') throw badRequest('this page has no properties');
+    if (body.wikiPropertiesEnabled !== undefined && request.tokenScopes !== undefined) {
+      await assertTokenMayWriteDirect(entry.space, 'changing the wiki properties setting');
+    }
     try {
       const result = await savePageProperties(entry, request.authUser!, body);
       return result.response;
@@ -71,6 +76,7 @@ export function registerPropertiesRoutes(app: FastifyInstance): void {
       return await updateVerification(entry, request.authUser!, body);
     } catch (err) {
       if (err instanceof PropertiesConflictError) return reply.status(409).send({ error: err.message });
+      if (err instanceof RevisionConflictError) return reply.status(409).send({ error: err.message, code: err.code, currentRevision: err.currentRevision });
       throw err;
     }
   });

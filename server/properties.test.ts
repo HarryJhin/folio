@@ -172,11 +172,104 @@ describe('GET/PUT /api/pages/:id/properties (real PG)', () => {
       readOnly: ['id'],
       canEdit: true,
       etag: sha1(p.text.slice(0, p.text.indexOf('# Page'))),
+      propertyEtag: sha1(p.text.slice(0, p.text.indexOf('# Page'))),
+      wikiProperties: { enabled: true, keys: ['owner', 'verified', 'review_by', 'tags'] },
       folioKeys: ['id', 'order', 'status', 'icon', 'cover'],
     });
     expect((await get(p.id, 'reader')).body.canEdit).toBe(false);
     const nothing = await page('no-block', '# No block\n');
     expect((await get(nothing.id)).body).toMatchObject({ etag: expect.any(String), properties: { id: nothing.id } }); // the scan gave it its id
+  });
+
+  it('reads a bare document twice without writing and distinguishes a missing file and malformed YAML', async () => {
+    const p = await page('bare-token', DOC);
+    const bare = '# Bare\r\n\r\nUntouched body.';
+    await fs.writeFile(p.abs, bare);
+    const before = await fs.stat(p.abs);
+    for (let read = 0; read < 2; read++) {
+      expect((await get(p.id)).body).toMatchObject({ propertyEtag: null, canEdit: true, properties: {}, wikiProperties: { enabled: true } });
+    }
+    expect((await fs.stat(p.abs)).mtimeMs).toBe(before.mtimeMs);
+    const disabled = await put(p.id, { wikiPropertiesEnabled: false, etag: null });
+    expect(disabled.status).toBe(200);
+    expect(disabled.body.wikiProperties).toEqual({ enabled: false, keys: [] });
+    expect((await put(p.id, { wikiPropertiesEnabled: true, etag: disabled.body.propertyEtag })).status).toBe(200);
+    expect(await fs.readFile(p.abs, 'utf8')).toBe(bare);
+    await fs.rm(p.abs);
+    const fallback = (await get(p.id)).body;
+    expect(fallback.canEdit).toBe(false);
+    expect(fallback).not.toHaveProperty('propertyEtag');
+    expect((await put(p.id, { wikiPropertiesEnabled: false, etag: null })).status).toBeGreaterThanOrEqual(400);
+    await fs.writeFile(p.abs, '---\ntitle: [bad\n---\nbody');
+    const malformed = (await get(p.id)).body;
+    expect(malformed.canEdit).toBe(false);
+    expect(malformed).not.toHaveProperty('propertyEtag');
+    expect((await put(p.id, { wikiPropertiesEnabled: false, etag: null })).status).toBe(400);
+  });
+
+  it('switches one document with a matching token and preserves content time and exact bytes on round-trip', async () => {
+    const p = await page('wiki-switch', DOC);
+    const first = (await get(p.id)).body;
+    const before = await storage.requireEntry(p.id);
+    const stamp = (await fs.stat(p.abs)).mtime.getTime();
+    expect((await put(p.id, { wikiPropertiesEnabled: false })).status).toBe(428);
+    const toggled = await put(p.id, { wikiPropertiesEnabled: false, etag: first.propertyEtag });
+    expect(toggled.status).toBe(200);
+    expect(toggled.body.properties).toEqual({ ...first.properties, folio_wiki_properties: 'disabled' });
+    expect((await storage.requireEntry(p.id)).updatedAt).toBe(before.updatedAt);
+    expect((await fs.stat(p.abs)).mtime.getTime()).toBe(stamp);
+    expect((await put(p.id, { wikiPropertiesEnabled: false, etag: first.propertyEtag })).status).toBe(409);
+    const retry = await put(p.id, { wikiPropertiesEnabled: false, etag: toggled.body.propertyEtag });
+    expect(retry.body.propertyEtag).toBe(toggled.body.propertyEtag);
+    const legacy = await put(p.id, { properties: first.properties });
+    expect(legacy.body.wikiProperties?.enabled).toBe(false);
+    expect((await put(p.id, { wikiPropertiesEnabled: true, etag: legacy.body.propertyEtag })).status).toBe(200);
+    expect(await fs.readFile(p.abs, 'utf8')).toBe(p.text);
+  });
+
+  it('protects the marker from a raw write and treats collisions and stale combined edits atomically', async () => {
+    const p = await page('wiki-collision', '---\nid: <ID>\nfolio_wiki_properties: [foreign] # keep\nother: old\n---\nBody');
+    const got = (await get(p.id)).body;
+    expect(got.wikiProperties?.enabled).toBe(true);
+    expect((await put(p.id, { wikiPropertiesEnabled: false, etag: got.etag, properties: { other: 'new' } })).status).toBe(409);
+    expect((await put(p.id, { properties: { folio_wiki_properties: 'disabled' } })).status).toBe(400);
+    expect(await fs.readFile(p.abs, 'utf8')).toBe(p.text);
+    expect((await put(p.id, { properties: { ...got.properties, other: 'new' } })).status).toBe(200);
+    expect(await fs.readFile(p.abs, 'utf8')).toBe(p.text.replace('other: old', 'other: new'));
+    const ordinary = await page('wiki-combined', '---\nid: <ID>\nother: old\n---\nBody');
+    const initial = (await get(ordinary.id)).body;
+    const changed = await put(ordinary.id, { etag: initial.etag, properties: {}, wikiPropertiesEnabled: false });
+    expect(changed.status).toBe(200);
+    expect(changed.body.properties).toEqual({ id: ordinary.id, folio_wiki_properties: 'disabled' });
+    expect((await put(ordinary.id, { etag: initial.etag, properties: { other: 'lost' }, wikiPropertiesEnabled: true })).status).toBe(409);
+    expect((await get(ordinary.id)).body.properties).toEqual(changed.body.properties);
+  });
+
+  it('requires page edit permission, write scope and direct agent writes for a toggle', async () => {
+    const p = await page('wiki-access', DOC);
+    const payload = { wikiPropertiesEnabled: false, etag: (await get(p.id)).body.etag };
+    const token = async (scopes: ('read' | 'write')[]) => ({ authorization: 'Bearer ' + (await authStore.createApiToken(editor.id, 'wiki', scopes)).token });
+    auth.readToken = await token(['read']);
+    auth.writeToken = await token(['read', 'write']);
+    expect((await put(p.id, payload, 'reader')).status).toBe(403);
+    expect((await put(p.id, payload, 'readToken')).status).toBe(403);
+    await query("UPDATE spaces SET agent_write_mode = 'review' WHERE slug = $1", [slug]);
+    try {
+      expect((await put(p.id, payload, 'writeToken')).status).toBe(403);
+      expect((await put(p.id, payload, 'editor')).status).toBe(200);
+    } finally {
+      await query("UPDATE spaces SET agent_write_mode = 'direct' WHERE slug = $1", [slug]);
+    }
+  });
+
+  it('preserves surviving raw tag spellings and permits echoing a foreign tags value', async () => {
+    const p = await page('legacy-tag-spelling', '---\nid: <ID>\ntags: ["#API", shared]\nlabels: [legacy, shared]\n---\nBody');
+    const result = await put(p.id, { properties: { tags: ['#API', 'new'], labels: ['legacy'] } });
+    expect(result.body.properties).toMatchObject({ tags: ['#API', 'new'], labels: ['legacy'] });
+    const foreign = await page('foreign-tag-map', '---\nid: <ID>\ntags: {illegal: true} # keep\n---\nBody');
+    const current = (await get(foreign.id)).body.properties;
+    expect((await put(foreign.id, { properties: { ...current, note: 'x' } })).status).toBe(200);
+    expect(await fs.readFile(foreign.abs, 'utf8')).toContain('tags: {illegal: true} # keep\n');
   });
 
   it('PUT: sets, adds, removes and renames keys in place — comments, quoting and untouched keys byte for byte, the body untouched', async () => {
