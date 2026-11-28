@@ -8,7 +8,9 @@ For changes integrated into the `custom` branch, see the [fork changelog](CHANGE
 
 - Documents in all spaces offer owner, verification date, next review and tags by default. Editors can switch these fields and review reminders off per page. Marking a document verified checks the version the editor read.
 
-- Added Korean throughout the interface, including the editor, whiteboard, offline reader, forms and administration. Date fields use the selected language and preserve calendar dates across time zones.
+- Added Korean throughout the interface, including the editor, whiteboard, offline reader, forms and administration. Date fields use the selected language and preserve calendar dates across time zones. The sign-in language switcher offers Korean as well.
+
+- Online and offline document readers now recognize Markdown emphasis next to Chinese, Japanese and Korean text, including a closing parenthesis followed by a Korean particle.
 
 - Shared and published HTML artifacts now recheck access to each bundle file. Visitors can submit directly shared forms that accept anonymous responses.
 
@@ -66,7 +68,6 @@ For changes integrated into the `custom` branch, see the [fork changelog](CHANGE
 
 - Comments anchor to any selection in reading mode, formatted or not; a selection that ends at a block boundary stops at that line, and the collapse toggles and hidden-block notes are no longer counted as page text.
 - ⇧⌘K in the editor reaches the link command instead of opening the quick switcher.
-- Online and offline document readers now recognize Markdown emphasis next to Chinese, Japanese and Korean text, including a closing parenthesis followed by a Korean particle.
 - The installed app's title bar follows the selected Folio theme, including system appearance changes and offline reading (thanks @HarryJhin, #27).
 - The page tree, the template picker and the template list of a large space no longer load every page's indexed text and search vector into server memory, so a space with tens of thousands of pages stays responsive instead of exhausting the Node heap (reported in #19).
 - Browser Undo keeps working after an agent edits several separate passages of a page through REST/MCP (reported in #18).

@@ -1,6 +1,6 @@
 # Built-in wiki properties on document pages
 
-Final design, 2026-11-27. Implementation targets the fork’s `custom` branch, reviewed at `d8a7b0f`. [Implementation plan](../plans/2026-11-27-default-wiki-properties.md).
+Final design, 2026-11-27. Implementation targets the fork’s `custom` branch, reviewed at `3ea3fa5`. [Implementation plan](../plans/2026-11-27-default-wiki-properties.md).
 
 A new article should already offer an owner, a verification date, a next review date and tags. Opening an existing article should offer the same four fields. A team can keep its space home free of these fields with one page setting. Showing an empty verification field must never imply that someone reviewed the article.
 

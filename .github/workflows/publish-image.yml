@@ -1,6 +1,6 @@
 # Builds the Folio image for amd64 and arm64 and publishes it to
-# ghcr.io/<this repository> (ghcr.io/evergreen-it-dev/folio here, a fork
-# publishes to its own). Every one-click kit in deploy/ pulls this image.
+# ghcr.io/evergreen-it-dev/folio. Both jobs run only in that repository, so
+# a fork publishes nothing. Every one-click kit in deploy/ pulls this image.
 #
 # Each platform builds on a native runner: arm64 under QEMU dies with SIGILL
 # in `npm ci` (#24).

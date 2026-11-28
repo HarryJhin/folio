@@ -1,6 +1,6 @@
 # Default wiki properties implementation plan
 
-Finalized 2026-11-27 for the Folio fork’s `custom` branch. The implementation baseline is `d8a7b0f`, which includes the Korean interface and the offline reader. Start the feature branch from the current `custom` tip and carry this plan and its [design](../design/2026-11-27-default-wiki-properties.md) with it. The checkboxes track implementation work.
+Finalized 2026-11-27 for the Folio fork’s `custom` branch. The implementation baseline is `3ea3fa5`, which includes the Korean interface and the offline reader. Start the feature branch from the current `custom` tip and carry this plan and its [design](../design/2026-11-27-default-wiki-properties.md) with it. The checkboxes track implementation work.
 
 **Goal.** Every existing and new document in every space offers owner, verification date, review deadline and tags. Each document has one reversible switch. A synthetic home listing has no document to configure.
 

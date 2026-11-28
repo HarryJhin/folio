@@ -8,6 +8,10 @@ Version: **0.4.5**.
 
 Record changes integrated into `custom` in the [fork changelog](../CHANGELOG-CUSTOM.md), with the commit or pull request for each entry.
 
+`custom` builds on upstream `main` at `726bf53`, six commits after Folio 0.4.6. The installable app and the offline reader come from upstream 0.4.6. Upstream's `065_access_request_page.sql` and the fork's `065_space_first_view.sql` share a number. The migration runner records file names, so both apply.
+
+Open: saved offline copies expire when the server has not confirmed them within `FOLIO_SESSION_TTL_DAYS`. With `FOLIO_ACTIVITY_SESSION_PROVIDER` set, a Pocket ID browser session ends after 14 idle days or 30 days from the passkey sign-in, independent of that setting. A device that stays offline can therefore keep readable copies after its session has ended.
+
 An absent `folio_wiki_properties` key enables the four document fields.
 Reads derive the field list. Only the page switch writes the opt-out marker.
 To mark a document verified, send the revision of the displayed body to
@@ -28,7 +32,7 @@ Open guest collaboration sockets recheck their share or publication for every ba
 
 A trash restore holds the destination’s file permissions until the saved grants are installed. Restoring a pre-067 trash item begins with an empty repository-file grant list because its prior editor approvals are unknown. An interrupted restore can be retried after indexing when the saved paths still have the same page IDs. If that identity check fails or the process stopped between the file move and indexing, recover the database and files together from the pre-restore backup before retrying. The pending row preserves the original destination and blocks purging its trash item.
 
-Migration 065 stores the first view per space. Signed-in space entry opens the graph by default. Space admins can select Space home in Space settings. The sidebar home and `/s/<space>/home` open the root index or directory listing. Public sites keep their document landing page.
+Migration `065_space_first_view.sql` stores the first view per space. Signed-in space entry opens the graph by default. Space admins can select Space home in Space settings. The sidebar home and `/s/<space>/home` open the root index or directory listing. Public sites keep their document landing page.
 
 Set `FOLIO_DISABLE_ASSISTANT=1` on deployments that provide AI access through external MCP clients and want to turn off the built-in chat. The server reports this setting in `AuthState.assistantDisabled`.
 

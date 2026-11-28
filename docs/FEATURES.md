@@ -455,7 +455,10 @@ them all. Switching accounts clears the previous account’s copies. Permission
 changes on the server can reach the device when it reconnects. A copy the
 server has not confirmed within the sign-in lifetime (`FOLIO_SESSION_TTL_DAYS`)
 is deleted from the device, so an expired session does not leave readable
-copies behind. Each browser
+copies behind. Under the Pocket ID session policy (`FOLIO_ACTIVITY_SESSION_PROVIDER`)
+a session can end before that lifetime. A device that stays offline keeps its
+copies until the lifetime passes; once Folio is opened online after the session
+has ended, they are cleared. Each browser
 profile and any isolated home-screen app keep their own copies. Clearing site
 data or storage eviction can remove them.
 
@@ -656,9 +659,10 @@ restrictions, nor anything below it: such a page is shared only by a link
 made for that page itself. This is checked on every visit, so restricting a
 page later also removes it from links that already exist.
 
-Opening a share URL in the browser uses the guest view and the permissions of
-that link. The normal page URL opens with the account's own rights. Only a
-browser session can list, create and revoke share links.
+A signed-in reader who can open the page is sent from `/share/<token>` to the
+normal page in their own account, with their own rights; add `?as=guest` to
+keep the guest view. Only a browser session can list, create and revoke share
+links.
 
 Raw attachment URLs require a current account credential and access to the
 attachment. Public and shared pages render separate attachment URLs. Each
