@@ -32,7 +32,9 @@
   },
   "table": {
     "switchToScroll": "원래 열 너비로 보기(가로 스크롤)",
-    "switchToFit": "표를 영역 너비에 맞추기"
+    "switchToFit": "표를 영역 너비에 맞추기",
+    "pinScroll": "표 고정(내부 스크롤, 머리글 행 고정)",
+    "unpinScroll": "표 고정 해제(페이지 스크롤만)"
   },
   "backlinks": {
     "title": "백링크"

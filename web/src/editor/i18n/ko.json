@@ -63,6 +63,8 @@
     "columnWidth": "드래그하여 {{n}}번째 열 너비 조절",
     "tableWidth": "바깥쪽 가장자리를 드래그하여 표 너비 조절",
     "widthGroup": "표 너비",
+    "pinScroll": "표 고정(내부 스크롤, 머리글 행 고정)",
+    "unpinScroll": "표 고정 해제(페이지 스크롤만)",
     "widthNarrow": "좁게",
     "widthMedium": "보통",
     "widthFull": "전체 너비",
@@ -394,5 +396,12 @@
       "red": "빨간색",
       "purple": "보라색"
     }
+  },
+  "linkPopover": {
+    "placeholder": "링크를 붙여넣거나 페이지 검색",
+    "aria": "링크 추가",
+    "hint": "웹 주소나 페이지 제목을 입력하세요",
+    "linkTo": "{{url}} 링크 삽입",
+    "noPages": "페이지를 찾을 수 없습니다."
   }
 }

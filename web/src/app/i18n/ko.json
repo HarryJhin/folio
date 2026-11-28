@@ -330,7 +330,8 @@
     "noAccess": {
       "title": "권한 없음",
       "space": "‘{{space}}’ 스페이스에 접근할 권한이 없습니다.",
-      "restrictedPage": "특정 사용자에게만 공개된 페이지입니다. 페이지 소유자나 스페이스 관리자에게 접근 권한을 요청하세요.",
+      "restrictedPage": "특정 사용자에게만 공개된 페이지입니다. 접근 권한을 요청하면 페이지 소유자에게 요청이 전달됩니다.",
+      "restrictedPageAdmin": "특정 사용자에게만 공개된 페이지입니다. Folio 관리자는 본인에게 접근 권한을 부여할 수 있으며, 이 작업은 접근 기록에 남습니다.",
       "generic": "이 페이지에 접근할 권한이 없습니다."
     },
     "root": {
@@ -608,7 +609,30 @@
       "invalid": "유효하지 않은 링크입니다. 해제되었거나 존재하지 않는 링크입니다.",
       "loadFailed": "이 링크로 페이지를 불러올 수 없습니다.",
       "navLabel": "페이지",
-      "navRoot": "최상위 페이지"
+      "navRoot": "최상위 페이지",
+      "signIn": "로그인",
+      "pillGuest": "게스트 · 보기 전용",
+      "bannerGuest": "링크를 통해 게스트로 이 페이지를 보고 있습니다. 아직 ‘{{space}}’ 스페이스에 역할이 없습니다.",
+      "requestAccess": "접근 권한 요청",
+      "accessRequested": "접근 권한 요청됨",
+      "requestFailed": "요청을 보내지 못했습니다. 다시 시도하세요.",
+      "myFolio": "내 Folio",
+      "adminBadge": "관리자",
+      "bannerRestricted": "특정 사용자에게만 공개된 페이지라서 ‘{{space}}’ 스페이스의 역할로는 열 수 없습니다. 페이지 소유자가 접근 권한을 부여할 수 있습니다.",
+      "bannerAdmin": "Folio 관리자이지만 ‘{{space}}’ 스페이스의 멤버가 아니므로 이 페이지를 게스트로 보고 있습니다.",
+      "bannerRestrictedAdmin": "특정 사용자에게만 공개된 페이지입니다. Folio 관리자는 본인에게 접근 권한을 부여할 수 있으며, 이 작업은 접근 기록에 남습니다.",
+      "bannerRestrictedMember": "특정 사용자에게만 공개된 페이지입니다. 접근 권한을 요청하면 페이지 소유자에게 요청이 전달됩니다.",
+      "giveMyselfAccess": "본인에게 접근 권한 부여",
+      "giveMyselfAccessFailed": "접근 권한을 부여하지 못했습니다. 다시 시도하세요.",
+      "requestPageAccess": "접근 권한 요청",
+      "pageAccessRequested": "요청을 보냈습니다",
+      "addMe": "스페이스에 나를 추가",
+      "addMeFailed": "스페이스에 추가하지 못했습니다. 다시 시도하세요.",
+      "manageSpace": "스페이스 관리",
+      "bannerPreview": "게스트가 이 링크로 이 페이지를 볼 때의 화면입니다.",
+      "backToPage": "페이지로 돌아가기",
+      "manageLink": "링크 관리",
+      "signedInAs": "{{name}} 계정으로 로그인됨"
     },
     "mdCopied": "마크다운 링크를 복사했습니다",
     "mdCopyFailed": "마크다운 링크를 복사할 수 없습니다. 직접 복사하세요",
@@ -1896,6 +1920,8 @@
     "decideFailed": "결정 사항을 저장하지 못했습니다.",
     "request": {
       "asks": "{{name}}님이 ‘{{space}}’ 접근 권한을 요청했습니다.",
+      "asksPage": "{{name}}님이 ‘{{space}}’의 ‘{{page}}’ 페이지 접근 권한을 요청했습니다.",
+      "stillRestricted": "접근을 허용했지만 상위 페이지의 제한은 다른 사람이 소유하고 있습니다. 그 페이지의 소유자도 접근을 허용해야 합니다.",
       "roleLabel": "역할",
       "approve": "접근 허용",
       "deny": "거부",
@@ -1905,13 +1931,20 @@
     },
     "decision": {
       "approved": "‘{{space}}’ 접근이 허용되었습니다 · {{role}}",
-      "denied": "‘{{space}}’ 접근이 거부되었습니다."
+      "denied": "‘{{space}}’ 접근이 거부되었습니다.",
+      "approvedPage": "‘{{page}}’ 페이지 접근이 허용되었습니다 · {{role}}",
+      "deniedPage": "‘{{page}}’ 페이지 접근이 거부되었습니다."
     },
     "requestAccess": {
       "action": "접근 권한 요청",
       "sending": "보내는 중…",
       "sent": "요청을 보냈습니다. 스페이스 관리자가 확인할 수 있습니다.",
       "already": "이미 이 스페이스에 접근할 수 있습니다. 페이지를 새로 고침하세요.",
+      "pageSent": "요청을 보냈습니다. 페이지 소유자가 확인할 수 있습니다.",
+      "pageAlready": "이미 이 페이지에 접근할 수 있습니다. 페이지를 새로 고침하세요.",
+      "selfGrant": "본인에게 접근 권한 부여",
+      "selfGranting": "여는 중…",
+      "selfGrantFailed": "접근 권한을 부여하지 못했습니다.",
       "failed": "요청을 보내지 못했습니다."
     }
   },
