@@ -30,7 +30,7 @@ import '../i18n/register';
  * public route).
  */
 async function fetchSharedChildPage(token: string, pageId: string): Promise<SharedPagePayload> {
-  const res = await fetch(`/api/share/${encodeURIComponent(token)}?page=${encodeURIComponent(pageId)}`, { credentials: 'omit' });
+  const res = await fetch(`/api/share/${encodeURIComponent(token)}?page=${encodeURIComponent(pageId)}`);
   if (!res.ok) {
     let message = res.statusText || `HTTP ${res.status}`;
     try {

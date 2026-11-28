@@ -1211,7 +1211,7 @@ export const api = {
    * nothing on the public /share/:token route listens for it (no
    * AuthProvider mounted there to react to it).
    */
-  getSharedPage: (token: string) => request<SharedPagePayload>(`/api/share/${encodeURIComponent(token)}`, { credentials: 'omit' }),
+  getSharedPage: (token: string) => request<SharedPagePayload>(`/api/share/${encodeURIComponent(token)}`),
 
   // ---------- git browser via saved PAT (round 11) ----------
 
