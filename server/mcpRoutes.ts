@@ -12,7 +12,6 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createMcpHandler, type AuthInfo } from '@modelcontextprotocol/server';
 import { toNodeHandler } from '@modelcontextprotocol/node';
-import { publicUrlOrOrigin } from './publicUrl.js';
 import type { ApiTokenScope, User } from '../shared/contracts.js';
 import * as authStore from './auth/store.js';
 import * as session from './auth/session.js';
@@ -29,7 +28,7 @@ import { MCP_WRITE_TOOL_NAMES, buildFolioMcpServer } from './mcp.js';
 import { mcpUploadRoutes } from './mcpUploadRoutes.js';
 import * as oauthStore from './oauth/store.js';
 import { issuerFor, mcpResourceFor, protectedResourceMetadataUrl } from './oauth/routes.js';
-import { requestOrigin } from './publicUrl.js';
+import { publicUrlOrOrigin, requestOrigin } from './publicUrl.js';
 
 export interface McpAuth {
   user: User;
