@@ -6,9 +6,12 @@
  * The root of an output schema must be an object, so a tool whose natural answer is an array wraps it under one
  * named key (`{ spaces: [...] }`); the text form keeps the bare array it always had.
  *
- * Every object is loose (extra keys allowed) and anything the server could not promise on every code path is
- * optional: a schema that is stricter than the data would turn a working call into an error. `kind`/`status`
- * are plain strings for the same reason — the enums live in shared/contracts.ts and can grow.
+ * Objects defined in this file are loose (extra keys allowed; `wikiProperties` reuses the closed contract
+ * schema), and anything the server could not promise on every code path is optional: a schema that is stricter
+ * than the data would turn a working call into an error. `kind`/`status` are plain strings for the same reason —
+ * the enums live in shared/contracts.ts and can grow. A tool's schema given as a plain shape is published closed
+ * (`additionalProperties: false`), and a client that validates rejects the whole result for one undeclared key,
+ * so such a shape names every top-level key the tool returns.
  */
 import { z } from 'zod';
 import { wikiPropertiesSchema } from '../shared/contracts.js';
@@ -27,6 +30,17 @@ export const pageMetaOutput = z.looseObject({
   updatedAt: z.string().describe('Last change, ISO timestamp'),
   icon: z.string().optional().describe('Emoji icon, if the page has one'),
   cover: z.string().optional().describe('Cover image URL, if the page has one'),
+  verification: z
+    .looseObject({
+      state: z.string().describe('unverified, verified, changed or overdue'),
+      owner: z.string().optional(),
+      verified: z.string().optional().describe('Verification date, YYYY-MM-DD'),
+      reviewBy: z.string().optional().describe('Review deadline, YYYY-MM-DD'),
+      daysOverdue: z.number().optional(),
+      invalid: z.array(z.string()).optional().describe('Properties whose dates could not be read'),
+    })
+    .optional()
+    .describe('Owner, verification date and review deadline with the computed state; present only on a page with owner, verified or review_by'),
 });
 
 const commentPersonOutput = z.looseObject({ name: z.string(), username: z.string().nullable().describe('Handle used in @mentions') }).nullable().describe('null when the account was deleted');
@@ -148,9 +162,10 @@ export const outputSchemas = {
       .describe('Spaces the caller can see'),
   },
   list_tree: { tree: z.array(treeNodeOutput).describe('Top-level pages of the space; each carries its children') },
-  read_page: {
+  read_page: z.looseObject({
     ...pageMetaOutput.shape,
     wikiProperties,
+    lightFootprint: z.literal(true).optional().describe('Doc pages of a light-footprint space (a repository sub-folder, an Obsidian vault or a space flagged light): its files belong to the repository, so the editor neither inserts nor guards an H1 there'),
     markdown: z.string().optional().describe('Document body as Markdown (doc pages)'),
     bodyRevision: z.string().optional().describe('Doc pages: opaque revision of `markdown`. Pass it to update_page as baseRevision to refuse the write if the page changed since this read'),
     svg: z.string().optional().describe('Raw SVG source (board pages when no layout summary applies)'),
@@ -170,8 +185,11 @@ export const outputSchemas = {
       .optional()
       .describe('Artifact pages (kind "artifact"): an interactive HTML page; replace it with publish_artifact'),
     entryHtml: z.string().optional().describe('Artifact pages: the HTML of the entry page'),
+  }),
+  page: {
+    ...pageMetaOutput.shape,
+    url: z.string().optional().describe('Template tools: link to the page in Folio'),
   },
-  page: pageMetaOutput.shape,
   /** update_page / create_page: the page, or in a review space (status 'proposed') the proposal that waits for an editor. */
   page_or_proposal: {
     ...pageMetaOutput.partial().shape,

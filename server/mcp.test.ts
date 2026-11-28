@@ -21,6 +21,8 @@ import * as storage from './storage.js';
 import * as authStore from './auth/store.js';
 import * as pageAccess from './pageAccess.js';
 import { readFileSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { buildFolioMcpServer, FOLIO_MCP_INSTRUCTIONS, FOLIO_SERVER_VERSION, MCP_WRITE_TOOL_NAMES, type McpActor } from './mcp.js';
 import type { User } from '../shared/contracts.js';
 
@@ -761,30 +763,47 @@ describe('server/mcp.ts — search and fetch (ChatGPT deep research format; real
   });
 
   it('every read tool answers with structuredContent that matches its outputSchema (the client validates it) and keeps the JSON text', async () => {
+    const { client, close } = await connectedClient(actorFor(editor));
+    const lightSpace = (await storage.createSpace(`SF Light ${stamp}`, admin.id)).slug;
     const check = async (name: string, args: Record<string, unknown>) => {
-      const r = await call(editor, name, args);
+      const r = await client.callTool({ name, arguments: args });
       expect(r.isError, `${name}: ${resultText(r)}`).toBeFalsy();
       expect(r.structuredContent, `${name} structuredContent`).toBeTruthy();
       expect(resultText(r), `${name} text`).toBeTruthy();
       return r.structuredContent as Record<string, any>;
     };
-    const spaces = await check('list_spaces', {});
-    expect(spaces.spaces.map((x: { slug: string }) => x.slug)).toContain(ownSpace);
-    const tree = await check('list_tree', { space: ownSpace });
-    expect(tree.tree.length).toBeGreaterThan(0);
-    expect(await check('read_page', { id: openDocId })).toMatchObject({ id: openDocId, markdown: expect.stringContaining(marker) });
-    expect((await check('search_pages', { query: marker })).hits.map((x: { id: string }) => x.id)).toContain(openDocId);
-    expect((await check('get_backlinks', { id: openDocId })).backlinks).toEqual([]);
-    expect(await check('get_page_metadata', { id: openDocId })).toMatchObject({ id: openDocId, headings: expect.any(Array), links: expect.any(Array), properties: expect.any(Object) });
-    expect(await check('list_unresolved_links', { space: ownSpace })).toMatchObject({ links: expect.any(Array), total: expect.any(Number) });
-    expect(await check('list_orphans', { space: ownSpace })).toMatchObject({ pages: expect.any(Array) });
-    expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/home` })).toMatchObject({ path: 'index.md' });
-    expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/p/${openDocId}` })).toMatchObject({ id: openDocId, parentPathForChildren: expect.any(String) });
-    expect((await check('folio_table_list', { space: ownSpace })).tables.map((x: { id: string }) => x.id)).toContain(tableId);
-    expect(await check('folio_table_schema', { id: tableId })).toMatchObject({ rowCount: 0, columns: [expect.objectContaining({ id: 'species' })] });
-    expect(await check('folio_table_query', { id: tableId })).toMatchObject({ total: 0, rows: [] });
-    expect(await check('folio_table_query', { id: tableId, format: 'markdown' })).toMatchObject({ total: 0, markdown: expect.stringContaining('Species') });
-    expect(await check('page_history', { id: openDocId })).toHaveProperty('revisions');
+    try {
+      const readPageSchema = (await client.listTools()).tools.find((tool) => tool.name === 'read_page')?.outputSchema;
+      expect(readPageSchema).toBeDefined();
+      expect(readPageSchema?.additionalProperties).not.toBe(false);
+      const spaces = await check('list_spaces', {});
+      expect(spaces.spaces.map((x: { slug: string }) => x.slug)).toContain(ownSpace);
+      const tree = await check('list_tree', { space: ownSpace });
+      expect(tree.tree.length).toBeGreaterThan(0);
+      expect(await check('read_page', { id: openDocId })).toMatchObject({ id: openDocId, markdown: expect.stringContaining(marker) });
+      expect((await check('search_pages', { query: marker })).hits.map((x: { id: string }) => x.id)).toContain(openDocId);
+      expect((await check('get_backlinks', { id: openDocId })).backlinks).toEqual([]);
+      expect(await check('get_page_metadata', { id: openDocId })).toMatchObject({ id: openDocId, headings: expect.any(Array), links: expect.any(Array), properties: expect.any(Object) });
+      expect(await check('list_unresolved_links', { space: ownSpace })).toMatchObject({ links: expect.any(Array), total: expect.any(Number) });
+      expect(await check('list_orphans', { space: ownSpace })).toMatchObject({ pages: expect.any(Array) });
+      expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/home` })).toMatchObject({ path: 'index.md' });
+      expect(await check('resolve_folio_url', { url: `/s/${ownSpace}/p/${openDocId}` })).toMatchObject({ id: openDocId, parentPathForChildren: expect.any(String) });
+      expect((await check('folio_table_list', { space: ownSpace })).tables.map((x: { id: string }) => x.id)).toContain(tableId);
+      expect(await check('folio_table_schema', { id: tableId })).toMatchObject({ rowCount: 0, columns: [expect.objectContaining({ id: 'species' })] });
+      expect(await check('folio_table_query', { id: tableId })).toMatchObject({ total: 0, rows: [] });
+      expect(await check('folio_table_query', { id: tableId, format: 'markdown' })).toMatchObject({ total: 0, markdown: expect.stringContaining('Species') });
+      expect(await check('page_history', { id: openDocId })).toHaveProperty('revisions');
+      await storage.setSpaceScanSettings(lightSpace, { lightFootprint: true });
+      await authStore.setMembership(lightSpace, editor.id, 'viewer');
+      await fs.writeFile(path.join(storage.getSpaceDir(lightSpace), 'verified.md'), '---\nowner: ann\nverified: 2999-01-01\nreview_by: 2999-06-01\n---\n# Verified\n\nText.\n');
+      await storage.scanSpace(lightSpace);
+      const verifiedId = (await storage.getEntryIdByExactPath(lightSpace, 'verified.md'))!;
+      expect(await check('read_page', { id: verifiedId })).toMatchObject({ lightFootprint: true, verification: { state: 'verified', owner: 'ann' } });
+      expect(await check('resolve_folio_url', { url: `/s/${lightSpace}/p/${verifiedId}` })).toMatchObject({ id: verifiedId, verification: { state: 'verified' } });
+    } finally {
+      await close();
+      await deleteTestSpace(lightSpace);
+    }
   });
 
   it('write tools return the changed page as structuredContent too (docs, boards, board_ops, tables)', async () => {
@@ -801,6 +820,10 @@ describe('server/mcp.ts — search and fetch (ChatGPT deep research format; real
       const doc = await run('create_page', { space: ownSpace, parentPath: '', title: 'Structured doc', markdown: '# Structured doc\n\nBody.\n' });
       expect(doc).toMatchObject({ kind: 'doc', title: 'Structured doc' });
       expect(await run('update_page', { id: doc.id, markdown: '# Structured doc\n\nChanged.\n' })).toMatchObject({ id: doc.id });
+      await fs.writeFile(path.join(storage.getSpaceDir(ownSpace), 'owned.md'), '---\nowner: ann\nverified: 2999-01-01\n---\n# Owned\n\nText.\n');
+      await storage.scanSpace(ownSpace);
+      const ownedId = (await storage.getEntryIdByExactPath(ownSpace, 'owned.md'))!;
+      expect(await run('update_page', { id: ownedId, markdown: '# Owned\n\nChanged.\n' })).toMatchObject({ id: ownedId, verification: expect.objectContaining({ owner: 'ann' }) });
       const board = await run('create_board', { space: ownSpace, parentPath: '', title: 'Structured board', sketch: { nodes: [{ id: 'a', type: 'rectangle', label: 'A', x: 0, y: 0 }, { id: 'b', type: 'rectangle', label: 'B', x: 300, y: 40 }], edges: [{ from: 'a', to: 'b' }] } });
       expect(board).toMatchObject({ kind: 'board' });
       expect(await run('update_board', { id: board.id, sketch: { nodes: [{ id: 'a', type: 'rectangle', label: 'A', x: 0, y: 0 }], edges: [] } })).toMatchObject({ id: board.id });

@@ -960,6 +960,11 @@ Each of these was a real defect. They are here so that nobody pays twice.
 - Do not pace every refresh. Throttling all of them delayed the last change
   of a burst; only intermediate progress refreshes may be spaced out. Measure
   the interval from the start of an API call, not from when it returns.
+- An MCP `outputSchema` must name every top-level key the tool returns. The
+  SDK publishes a plain shape as a closed JSON Schema, its own check strips
+  unknown keys and passes, and a validating client then rejects the whole
+  result. The SDK client validates only after `listTools()`, so a test proves
+  an output schema only when its client listed the tools first.
 
 **Front end and deployment**
 

@@ -29,6 +29,7 @@ For changes integrated into the `custom` branch, see the [fork changelog](CHANGE
 - Conditional Markdown saves through REST and MCP report revision conflicts. Page history follows renames, and trash restores preserve compound file types and identifiers on name conflicts.
 - Ordinary Markdown links use the cross-space catalog. The MCP unresolved-link list takes the viewer’s permissions into account, and Form and Base links report the correct child folder.
 - Duplicated table rows have independent IDs. Existing duplicate IDs are repaired when read. Filtered row insertion follows the selected source row. Current-view exports omit hidden cell values, and toolbar YAML preserves the saved views for import.
+- MCP `read_page`, `update_page` and `resolve_folio_url` results now match their output schemas for pages with owner, verified or review_by, and `read_page` for documents of light-footprint spaces. The schemas of `create_template`, `save_page_as_template` and `create_page_from_template` declare the page link they return. Clients that validate structured results no longer reject these results.
 - MCP supports the 2026-07-28 and 2025-11-25 lifecycles, browser origin checks and OAuth scope challenges. Authorization-code exchange accepts an omitted redirect URI with PKCE, and dynamic registration returns the registered client URI.
 - OIDC providers always request the openid scope. SAML verifies bearer confirmations against the receiving endpoint. SCIM honors attribute selection for users and groups.
 

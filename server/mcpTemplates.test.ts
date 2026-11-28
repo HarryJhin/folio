@@ -18,6 +18,7 @@ async function call(actor: McpActor, name: string, args: Record<string, unknown>
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
   try {
+    await client.listTools();
     const result = await client.callTool({ name, arguments: args });
     const text = (result.content as Array<{ text?: string }>)[0]?.text ?? '';
     let json: Record<string, any> = {};
